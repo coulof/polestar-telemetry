@@ -14,8 +14,8 @@ from . import config
 from .insights import DRIVING_MODES
 
 BATTERY_KWH = float(os.environ.get("BATTERY_KWH", 78))  # usable; unverified for this variant
+MIN_KM_FOR_ENERGY = 3      # SoC moves in 1 % steps (~0.8 kWh): shorter trips get no energy estimate
 TRIP_GAP_S = 15 * 60       # fallback (no usage-mode data): odometer readings further apart than this start a new trip
-TRIP_MERGE_GAP_S = 10 * 60  # driving windows separated by a stop shorter than this are one trip
 CHARGE_GAP_S = 2 * 3600    # charging readings further apart than this start a new session
 CHARGING_STATES = {
     "CHARGING_STATUS_V2_CHARGING",
@@ -53,8 +53,8 @@ def _asof(df, times, cols, direction="backward", tolerance="1h"):
 
 
 def _driving_windows(availability):
-    """(start, end) of each completed drive from `usageMode` events, merging stops shorter than
-    TRIP_MERGE_GAP_S. A drive still in progress has no end yet and is left out."""
+    """(start, end) of each completed drive from `usageMode` events; each window is its own trip.
+    A drive still in progress has no end yet and is left out."""
     a = availability.dropna(subset=["usageMode"]).sort_values("time")
     wins, start = [], None
     for t, mode in zip(a["time"], a["usageMode"]):
@@ -63,24 +63,23 @@ def _driving_windows(availability):
         elif mode not in DRIVING_MODES and start is not None:
             wins.append((start, t))
             start = None
-    merged = []
-    for s_, e_ in wins:
-        if merged and (s_ - merged[-1][1]).total_seconds() <= TRIP_MERGE_GAP_S:
-            merged[-1] = (merged[-1][0], e_)
-        else:
-            merged.append((s_, e_))
-    return merged
+    return wins
 
 
 def _trips_from_windows(odometer, availability):
     """Trips from driving windows: the car reports the odometer only when a drive starts and ends, so the
-    distance is the odometer change across the window (start value: last reading before it; end value: the
-    latest reading up to 10 minutes after it, as the end reading can arrive just before the mode change)."""
+    distance is the odometer change across the window. Start value: the last reading before it. End value:
+    the latest reading up to 10 minutes after it (the end reading can arrive just before the mode change),
+    but never past the start of the next drive."""
     o = odometer.dropna(subset=["odometerMeters"]).sort_values("time")
+    wins = _driving_windows(availability)
     rows = []
-    for s_, e_ in _driving_windows(availability):
+    for i, (s_, e_) in enumerate(wins):
+        limit = e_ + pd.Timedelta(minutes=10)
+        if i + 1 < len(wins):
+            limit = min(limit, wins[i + 1][0])
         before = o[o["time"] <= s_]
-        after = o[(o["time"] > s_) & (o["time"] <= e_ + pd.Timedelta(minutes=10))]
+        after = o[(o["time"] > s_) & (o["time"] <= limit)]
         if before.empty or after.empty:
             continue
         km = (after["odometerMeters"].max() - before["odometerMeters"].iloc[-1]) / 1000
@@ -106,6 +105,13 @@ def _trips_from_odometer(odometer):
     return pd.DataFrame(rows, columns=["start", "end", "km"])
 
 
+def avg_consumption(trips):
+    """kWh per 100 km over the trips that have an energy estimate (NaN when none do)."""
+    valid = trips.dropna(subset=["kwh"]) if len(trips) else trips
+    km = valid["km"].sum() if len(valid) else 0.0
+    return valid["kwh"].sum() / km * 100 if km > 0 else float("nan")
+
+
 def trips(odometer, battery, location=None, availability=None):
     """One row per trip. With `availability` (usage-mode events) trips are the driving windows; otherwise
     runs of increasing odometer readings."""
@@ -128,6 +134,8 @@ def trips(odometer, battery, location=None, availability=None):
     t["soc_end"] = after.fillna(before)          # no reading after the drive yet: use the last one before
     t["kwh"] = (t["soc_start"] - t["soc_end"]) / 100 * BATTERY_KWH
     t["kwh_per_100km"] = t["kwh"] / t["km"] * 100
+    short = t["km"] < MIN_KM_FOR_ENERGY
+    t.loc[short, ["kwh", "kwh_per_100km"]] = float("nan")
     return t[cols]
 
 
@@ -212,7 +220,8 @@ def _tou_cost(readings, loc, tz):
 
 
 def price_sessions(sessions, location, cfg, battery=None):
-    """Add location, price_per_kwh and cost (EUR) to charge sessions.
+    """Add location, price_per_kwh, fee and cost (EUR) to charge sessions. cost = energy + the location's
+    optional `session_fee` (fixed amount per session); price_per_kwh is the energy price only.
 
     The car is assumed to be where it last reported a position before the session started. A location
     with [[location.tariff]] windows is priced per reading interval (needs `battery`); price_per_kwh is
@@ -225,7 +234,7 @@ def price_sessions(sessions, location, cfg, battery=None):
     else:
         locs = [None] * len(out)
     tz = cfg.get("timezone", "Europe/Paris")
-    names, prices, costs, cheapest_costs = [], [], [], []
+    names, prices, costs, cheapest_costs, fees = [], [], [], [], []
     for (_, sess), loc in zip(out.iterrows(), locs):
         name = loc["name"] if loc else None
         price = loc["price_per_kwh"] if loc else cfg["default_price"]
@@ -236,11 +245,16 @@ def price_sessions(sessions, location, cfg, battery=None):
             if len(window) > 1:
                 cost, cheapest = _tou_cost(window, loc, tz)
                 price = cost / sess["kwh_from_power"] if sess["kwh_from_power"] else price
+        fee = float(loc.get("session_fee") or 0) if loc else 0.0    # fixed charge per session at this place
+        if fee and pd.notna(cost):
+            cost, cheapest = cost + fee, cheapest + fee            # a fee does not change what timing could save
         names.append(name)
         prices.append(price)
         costs.append(cost)
         cheapest_costs.append(cheapest)
+        fees.append(fee)
     out["location"] = names
+    out["fee"] = pd.Series(fees, index=out.index, dtype=float)
     out["price_per_kwh"] = pd.to_numeric(pd.Series(prices, index=out.index), errors="coerce")
     out["cost"] = pd.Series(costs, index=out.index, dtype=float)
     # what the same energy would have cost at the location's cheapest rate (moving it all off-peak)

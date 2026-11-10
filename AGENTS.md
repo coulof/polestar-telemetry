@@ -27,8 +27,9 @@ Search code with `rg`. Run tests after any change to `polestar/`.
 - The dashboard has no auth. The compose file binds it to `BIND_ADDR` (default `127.0.0.1`).
 - Streamlit: use `width="stretch"` (not `use_container_width`).
 - Charging settings (`targetSoc`, `ampLimit`, timers) are read-only snapshots via `polestar/charging.py`. `chargeLocations` and `isAtChargeLocation` return 404 for this car; the collector skips 404s silently. Timer times are local at the stored `offsetMinutes`.
+- A location's optional `session_fee` is added once per charge session to `cost` (and `cost_cheapest`); `price_per_kwh` stays the energy price only.
 - Time-of-use tariffs are priced per reading interval in `derive.price_sessions` (pass `battery`); it also returns `cost_cheapest` and `saving` (peak energy at the cheapest rate). The Now tab shows charging notes for exceptions only; avoid adding always-on lines to the hero card.
-- **Trips come from `usageMode` driving windows**, not odometer cadence. Observed on 10 Nov: the car reports the odometer once when a drive starts and once when it ends (no events in between) and sends no location while driving, so `derive.trips(..., availability=...)` takes the distance as the odometer change across the window and merges stops shorter than `TRIP_MERGE_GAP_S` (10 min, an assumption). The odometer-gap method is only the fallback without usage-mode data. There is no route to draw, only start and end.
+- **Trips come from `usageMode` driving windows**, not odometer cadence. Observed on 10 Nov: the car reports the odometer once when a drive starts and once when it ends (no events in between) and sends no location while driving, so `derive.trips(..., availability=...)` takes the distance as the odometer change across the window; every driving window is its own trip (two legs 2 minutes apart are two trips, as the owner confirmed). Trips under `MIN_KM_FOR_ENERGY` (3 km) get no energy estimate because SoC moves in 1 % steps. The odometer-gap method is only the fallback without usage-mode data. There is no route to draw, only start and end.
 - Several processes share the SQLite file; `connect()` enables WAL.
 
 ## Brand and colours
@@ -42,7 +43,7 @@ Polestar look, kept calm and uncluttered: one strong accent on a neutral base, t
 - **Back pocket, not in use yet:** the brand posters also use a red and a blue. Sampled from the poster images (approximate, not an official palette): red `#E13C32`, blue `#0028A3`. Keep them available for a future third or fourth hue; do not introduce them without being asked.
 - **Typography:** the brand face is Unica77 (licensed, not available). The app uses Inter, self-hosted in `static/`, as a free stand-in; swap the font file and the `font`/`fontFaces` names in `.streamlit/config.toml` plus `FONT` in `polestar/theme.py` if a licence appears.
 - **Charts:** follow the `dataviz` skill (thin marks, recessive grid, one hue per metric, legend for two or more series, tables beside radars). New colours go through `polestar/theme.py`, not hard-coded in `app.py`.
-- **Mock-ups:** `POLESTAR_MOCK=1` shows a "Compare (mock)" tab built on synthetic data (`polestar/mock_compare.py`). It never ships to the server and does not read the database.
+- **Mock-ups:** `POLESTAR_MOCK=1` shows two tabs built on synthetic data: "Compare (mock)" (`polestar/mock_compare.py`, month-to-month) and "Path (mock)" (`polestar/mock_path.py`, the Hero's Path map with a day scrubber whose camera jumps to each day's trips, a stays timeline and a places table). They never ship to the server and do not read the database. The real car reports no position while driving, so a real path would be curves between parked positions.
 
 ## Weekly report
 

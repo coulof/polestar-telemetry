@@ -166,12 +166,17 @@ def test_trip_from_driving_window_with_start_and_end_odometer_only(monkeypatch):
     assert t.loc[0, "soc_start"] == 80 and t.loc[0, "soc_end"] == 78
 
 
-def test_short_stop_merges_legs_but_long_stop_does_not():
-    o = odo([0, 21.9, 24, 39.9, 61, 80], [100_000, 118_400, 118_400, 130_000, 130_000, 140_000])
-    merged = derive.trips(o, bat([0], [80]), availability=avail([0, 22, 24, 40], [DRIVE, STOP, DRIVE, STOP]))
-    assert len(merged) == 1 and merged.loc[0, "km"] == 30.0 and merged.loc[0, "minutes"] == 40
-    apart = derive.trips(o, bat([0], [80]), availability=avail([0, 22, 61, 81], [DRIVE, STOP, DRIVE, STOP]))
-    assert len(apart) == 2 and apart["km"].round(1).tolist() == [18.4, 10.0]
+def test_each_driving_window_is_its_own_trip_even_after_a_short_stop():
+    o = odo([0, 21.9, 24, 39.9], [100_000, 118_400, 118_400, 130_000])
+    t = derive.trips(o, bat([0], [80]), availability=avail([0, 22, 24, 40], [DRIVE, STOP, DRIVE, STOP]))
+    assert len(t) == 2 and t["km"].round(1).tolist() == [18.4, 11.6] and t["minutes"].tolist() == [22, 16]
+
+
+def test_avg_consumption_ignores_trips_without_energy_estimate():
+    t = pd.DataFrame({"km": [10.0, 20.0, 5.0], "kwh": [1.5, 3.0, float("nan")]})
+    assert abs(derive.avg_consumption(t) - 15.0) < 1e-9            # 4.5 kWh over the 30 km that have an estimate
+    assert pd.isna(derive.avg_consumption(pd.DataFrame({"km": [5.0], "kwh": [float("nan")]})))
+    assert pd.isna(derive.avg_consumption(pd.DataFrame(columns=["km", "kwh"])))
 
 
 def test_open_window_and_stationary_window_make_no_trip():
@@ -192,3 +197,16 @@ def test_trip_soc_end_uses_last_reading_when_none_follows():
     o = odo([0, 21.9], [100_000, 118_400])
     t = derive.trips(o, bat([0, 20], [80, 78]), availability=avail([0, 22], [DRIVE, STOP]))   # no battery event after 22 min
     assert t.loc[0, "soc_end"] == 78 and pd.notna(t.loc[0, "kwh"])
+
+
+def test_end_odometer_never_reaches_into_the_next_drive():
+    # real pattern: the second leg ends only 5 minutes after the first, inside the 10-minute tolerance
+    o = odo([0, 21.9, 24, 29.9], [100_000, 118_400, 118_400, 119_100])
+    t = derive.trips(o, bat([0, 40], [83, 79]), availability=avail([0, 22, 24, 30], [DRIVE, STOP, DRIVE, STOP]))
+    assert t["km"].round(1).tolist() == [18.4, 0.7]
+
+
+def test_very_short_trips_get_no_energy_estimate():
+    o = odo([0, 5], [100_000, 100_700])
+    t = derive.trips(o, bat([0, 10], [80, 80]), availability=avail([0, 5], [DRIVE, STOP]))
+    assert len(t) == 1 and pd.isna(t.loc[0, "kwh"]) and pd.isna(t.loc[0, "kwh_per_100km"])

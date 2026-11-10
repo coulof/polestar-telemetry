@@ -39,7 +39,7 @@ Optional: `DB_PATH` (default `data/telemetry.db`), `CONFIG_PATH` (default `confi
 Re-read on every poll, so edits apply without a restart. See [`config.example.toml`](config.example.toml).
 
 - `[poll] interval` / `interval_active`: seconds between polls when idle / while charging or driving (defaults 300 / 60). Command-line flags `--interval` and `--interval-active` take precedence.
-- `[[location]]`: name, lat, lon, `radius_m`, `price_per_kwh`. A charge session is priced by the position the car last reported before it started. Optional `[[location.tariff]]` sub-tables (`from`, `to`, `price_per_kwh`, optional `days`; windows may cross midnight, `from` = `to` means all day) give time-of-use pricing, applied per reading interval. Top-level `timezone` sets the clock for tariffs and weeks. `[pricing] default_price_per_kwh` covers unlisted places; unset means cost unknown.
+- `[[location]]`: name, lat, lon, `radius_m`, `price_per_kwh`. A charge session is priced by the position the car last reported before it started. Optional `[[location.tariff]]` sub-tables (`from`, `to`, `price_per_kwh`, optional `days`; windows may cross midnight, `from` = `to` means all day). A location may also set `session_fee`, a fixed amount added to each charging session there give time-of-use pricing, applied per reading interval. Top-level `timezone` sets the clock for tariffs and weeks. `[pricing] default_price_per_kwh` covers unlisted places; unset means cost unknown.
 - `[report]` `timezone` (weeks run Monday to Sunday) and `model` (Claude Code model alias). `[service]` `warn_days` / `warn_km`: when the service-due warning appears. `[co2] g_per_kwh`: grid carbon intensity, enables CO2 figures in Insights.
 
 ## What the dashboard shows

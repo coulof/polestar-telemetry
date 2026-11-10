@@ -128,3 +128,17 @@ def test_no_saving_for_weekday_sessions_at_weekend_tariff_location():
     loc = pd.DataFrame({"time": [times[0] - pd.Timedelta("1h")], "coordinate.latitude": [50.0], "coordinate.longitude": [3.0]})
     out = derive.price_sessions(sessions, loc, cfg, battery)
     assert abs(out.loc[0, "cost"] - 12 * 0.225) < 0.01 and abs(out.loc[0, "saving"]) < 1e-9
+
+
+def test_session_fee_is_added_once_and_does_not_change_saving():
+    cfg = {"timezone": "Europe/Paris", "default_price": None, "locations": [
+        {"name": "Work", "lat": 50.0, "lon": 3.0, "radius_m": 100, "price_per_kwh": 0.25, "session_fee": 6.0,
+         "tariff": [{"from": "23:00", "to": "07:00", "price_per_kwh": 0.15}]}]}
+    times = pd.date_range("2026-01-01 21:00", periods=9, freq="30min", tz="UTC")           # 22:00-02:00 Paris
+    battery = pd.DataFrame({"time": times, "chargingPowerWatts": [6000] * 9})
+    sessions = pd.DataFrame({"start": [times[0]], "end": [times[-1]], "kwh_from_power": [24.0]})
+    loc = pd.DataFrame({"time": [times[0] - pd.Timedelta("1h")], "coordinate.latitude": [50.0], "coordinate.longitude": [3.0]})
+    out = derive.price_sessions(sessions, loc, cfg, battery)
+    assert abs(out.loc[0, "cost"] - (6 * 0.25 + 18 * 0.15 + 6.0)) < 0.01
+    assert abs(out.loc[0, "saving"] - 6 * (0.25 - 0.15)) < 0.01
+    assert out.loc[0, "fee"] == 6.0 and abs(out.loc[0, "price_per_kwh"] - 4.2 / 24) < 0.001   # energy price only

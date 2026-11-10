@@ -34,6 +34,8 @@ lat = 1.0
 lon = 1.0
 radius_m = 150
 price_per_kwh = 0.20
+# Optional fixed fee per charging session at a location, added to the energy cost: session_fee = 6.0
+#
 # Optional time-of-use pricing: [[location.tariff]] sub-tables belong to the [[location]] just above them.
 # Within a window the tariff price replaces the location's price_per_kwh; windows may cross midnight.
 # [[location.tariff]]

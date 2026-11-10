@@ -43,10 +43,9 @@ def _num(x, digits=1):
 
 def _driving(trips):
     km = trips["km"].sum() if len(trips) else 0.0
-    kwh = trips["kwh"].sum() if len(trips) and trips["kwh"].notna().any() else None
     return {
         "trips": int(len(trips)), "km": _num(km),
-        "kwh_per_100km_estimated": _num(kwh / km * 100) if kwh is not None and km > 0 else None,
+        "kwh_per_100km_estimated": _num(derive.avg_consumption(trips)),
         "longest_trip_km": _num(trips["km"].max()) if len(trips) else None,
         "avg_speed_kmh": _num(km / (trips["minutes"].sum() / 60)) if len(trips) and trips["minutes"].sum() > 0 else None,
     }

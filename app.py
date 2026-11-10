@@ -278,7 +278,7 @@ sessions = derive.price_sessions(sessions, location, config.load(), battery)
 
 MOCK = os.environ.get("POLESTAR_MOCK") == "1"   # design mock-up on synthetic data, never on the server
 tabs = st.tabs(["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
-               + (["Compare (mock)"] if MOCK else []))
+               + (["Compare (mock)", "Path (mock)"] if MOCK else []))
 tab_now, tab_report, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = tabs[:8]
 
 # ---- now -----------------------------------------------------------------
@@ -314,8 +314,9 @@ with tab_trips:
         c = st.columns(3)
         c[0].metric("Trips", len(trip_table), border=True)
         c[1].metric("Distance", f"{trip_table['km'].sum():.0f} km", border=True)
-        kwh100 = trip_table["kwh"].sum() / trip_table["km"].sum() * 100 if trip_table["kwh"].notna().any() else float("nan")
-        c[2].metric("Avg consumption (est.)", f"{kwh100:.1f} kWh/100 km", border=True)
+        kwh100 = derive.avg_consumption(trip_table)
+        c[2].metric("Avg consumption (est.)", f"{kwh100:.1f} kWh/100 km" if pd.notna(kwh100) else "—", border=True,
+                    help="From the SoC drop over trips with a battery reading at both ends." )
         daily = trip_table.assign(day=trip_table["start"].dt.date).groupby("day", as_index=False)["km"].sum()
         st.plotly_chart(bar_chart(daily, "day", "km", "Distance per day", "km"), width="stretch")
         eff = trip_table.dropna(subset=["kwh_per_100km"])
@@ -357,7 +358,8 @@ with tab_charge:
         st.plotly_chart(line_chart(cw, "time", "kw", "Charging power", "kW", mode="lines+markers", step=True),
                         width="stretch")
         place = s["location"] if isinstance(s["location"], str) else "unpriced location"
-        cost = f"€{s['cost']:.2f} at €{s['price_per_kwh']:.2f}/kWh" if pd.notna(s["cost"]) else "cost unknown"
+        cost = ((f"€{s['cost']:.2f} at €{s['price_per_kwh']:.2f}/kWh" + (f" + €{s['fee']:.2f} session fee" if s["fee"] else ""))
+                if pd.notna(s["cost"]) else "cost unknown")
         if s["partial"]:
             st.caption(":material/info: This session began before tracking started, so energy and SoC change are lower bounds.")
         if pd.notna(s["saving"]) and s["saving"] > 0.005:
@@ -369,7 +371,7 @@ with tab_charge:
                    f"{place}: {cost}.")
         with st.expander("Table"):
             st.dataframe(sessions.round({"minutes": 1, "kwh_from_soc": 1, "kwh_from_power": 1, "peak_kw": 1,
-                                         "price_per_kwh": 2, "cost": 2, "cost_cheapest": 2, "saving": 2,
+                                         "price_per_kwh": 2, "fee": 2, "cost": 2, "cost_cheapest": 2, "saving": 2,
                                          "median_amps": 0}), hide_index=True, width="stretch")
 
     with st.expander("Car charging settings"):
@@ -516,6 +518,8 @@ with tab_data:
         st.json(raw)
 
 if MOCK:
-    from polestar import mock_compare
+    from polestar import mock_compare, mock_path
     with tabs[8]:
         mock_compare.render()
+    with tabs[9]:
+        mock_path.render()
