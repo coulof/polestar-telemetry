@@ -26,6 +26,10 @@ run = "uv run python -m polestar.collect --loop"
 description = "Run the dashboard"
 run = "uv run streamlit run app.py"
 
+[tasks.report]
+description = "Generate the weekly report locally with the claude CLI (add -- --week 2026-W46 --force)"
+run = "uv run python -m polestar.report --generate"
+
 [tasks.test]
 description = "Run tests"
 run = "uv run pytest"

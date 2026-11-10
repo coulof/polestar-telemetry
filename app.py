@@ -9,7 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from polestar import config, derive, insights, theme
+from polestar import config, derive, insights, report, theme
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
@@ -231,12 +231,32 @@ if period_days and not sessions.empty:
 sessions = derive.price_sessions(sessions, location, config.load())
 
 st.title("Polestar 2")
-tab_now, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = st.tabs(
-    ["Now", "Trips", "Charging", "Battery", "Insights", "Air", "Data"])
+tab_now, tab_report, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = st.tabs(
+    ["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"])
 
 # ---- now -----------------------------------------------------------------
 with tab_now:
     now_tab()
+
+# ---- weekly report -------------------------------------------------------
+with tab_report:
+    rdb = connect(DB_PATH)
+    weeks = report.list_weeks(rdb)
+    if not weeks:
+        empty("No weekly report yet. A timer on the server writes one every Monday morning; "
+              "run `deploy/weekly-report.sh` there (or `mise run report` locally) to create the first.",
+              ":material/auto_awesome:")
+    else:
+        wk = st.selectbox("Week", [w["week"] for w in weeks], label_visibility="collapsed")
+        r = report.get(rdb, wk)
+        week_stats = json.loads(r["stats"])
+        with st.container(border=True):
+            st.caption(f"{week_stats['period']['start']} to {week_stats['period']['end']}")
+            st.markdown(r["markdown"])
+        st.caption(f"Written by Claude ({r['model']}) on {r['created_at'][:10]} from estimated figures; "
+                   "only aggregates were sent, no VIN or coordinates.")
+        with st.expander("Numbers behind it"):
+            st.json(week_stats, expanded=1)
 
 # ---- trips ---------------------------------------------------------------
 with tab_trips:

@@ -28,6 +28,10 @@ Search code with `rg`. Run tests after any change to `polestar/`.
 - Streamlit: use `width="stretch"` (not `use_container_width`).
 - Several processes share the SQLite file; `connect()` enables WAL.
 
+## Weekly report
+
+`polestar/stats.py` builds the aggregates (never include VIN or coordinates; there is a test for it), `polestar/report.py` builds the prompt, calls `claude -p` (subscription login, no API key) and stores results in the `reports` table. The container has no CLI: on the server `deploy/weekly-report.sh` runs on the host and uses `podman exec` for the stats and storage steps. Tests must never call the real CLI (use `CLAUDE_BIN` with a fake script, and `CONFIG_PATH` pointing at a missing file).
+
 ## Deployment (personal server)
 
 Podman rootless with `podman-compose`, code in `~/src/polestar-telemetry` on the target host, managed by the systemd user unit `polestar-telemetry` (linger enabled). Update flow: rsync the project (excluding `data`, `.venv`, `.git`, `export`), `podman-compose build`, `systemctl --user restart polestar-telemetry`. `config.toml` must be world-readable (mode 644) so the container user can read it; `.env` stays 600.

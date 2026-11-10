@@ -12,6 +12,10 @@ warn_km = 1500     # ...or this many km
 [co2]
 # g_per_kwh = 60    # grid carbon intensity; enables CO2 figures in the Insights tab
 
+[report]
+timezone = "Europe/Paris"   # weeks run Monday to Sunday in this timezone
+model = "sonnet"             # Claude Code model alias for the weekly report
+
 [pricing]
 # default_price_per_kwh = 0.25   # for charges away from any listed location; unset = cost unknown
 

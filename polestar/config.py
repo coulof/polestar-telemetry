@@ -5,6 +5,7 @@ import tomllib
 
 DEFAULT_PATH = "config.toml"
 DEFAULTS = {"interval": 300, "interval_active": 60, "radius_m": 150}
+REPORT_DEFAULTS = {"timezone": "Europe/Paris", "model": "sonnet"}
 SERVICE_DEFAULTS = {"warn_days": 30, "warn_km": 1500}
 
 
@@ -19,6 +20,7 @@ def load(path=None):
     return {
         "interval": int(poll["interval"]),
         "interval_active": int(poll["interval_active"]),
+        "report": {**REPORT_DEFAULTS, **raw.get("report", {})},
         "co2_g_per_kwh": raw.get("co2", {}).get("g_per_kwh"),
         "service": {**SERVICE_DEFAULTS, **raw.get("service", {})},
         "default_price": raw.get("pricing", {}).get("default_price_per_kwh"),
