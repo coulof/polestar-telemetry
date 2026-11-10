@@ -44,10 +44,10 @@ def is_dark():
 
 
 def chip(text, on, color="green"):
-    """HTML for the status chip: tinted and gently pulsing while `on` (green for charging, orange for
+    """HTML for the status chip: tinted and gently pulsing while `on` (green for charging, gold for
     driving), grey otherwise."""
-    if on and color == "orange":
-        bg, fg = ("rgba(255,117,0,.22)", "#FFA45C") if is_dark() else ("rgba(237,118,14,.14)", "#9A4A05")
+    if on and color == "gold":      # Swedish gold #F6BE00 (secondary brand colour)
+        bg, fg = ("rgba(246,190,0,.20)", "#F6BE00") if is_dark() else ("rgba(246,190,0,.24)", "#7A5C00")
     elif on:
         bg, fg = ("rgba(25,158,112,.22)", "#6fdcb2") if is_dark() else ("rgba(27,175,122,.15)", "#0b6b4a")
     else:

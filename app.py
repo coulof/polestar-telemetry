@@ -99,7 +99,7 @@ def chips(exterior, health, pre, cfg, driving=False):
     """Coloured status badges (lock, doors, service, air) as one markdown line."""
     out = []
     if driving:     # lock and door events are hours old while the car is in use; don't show them as current
-        out.append(":orange-badge[:material/directions_car: In use]")
+        out.append(":yellow-badge[:material/directions_car: In use]")
     elif not exterior.empty:
         e = exterior.iloc[-1]
         out.append(":green-badge[:material/lock: Locked]" if e.get("centralLock") == "LOCK_STATUS_LOCKED"
@@ -188,7 +188,7 @@ def now_tab():
     with st.container(border=True, key="hero"):
         status = str(b.get("chargingStatusV2", "")).removeprefix("CHARGING_STATUS_V2_").replace("_", " ").capitalize()
         if driving:                 # what the car is doing beats its (idle) charge state
-            st.markdown(theme.chip("Driving", True, "orange"), unsafe_allow_html=True)
+            st.markdown(theme.chip("Driving", True, "gold"), unsafe_allow_html=True)
         else:
             st.markdown(theme.chip("Parked" if status in ("Idle", "") else status, charging), unsafe_allow_html=True)
         left, right = st.columns([1, 2], vertical_alignment="center")
