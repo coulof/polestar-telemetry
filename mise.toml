@@ -1,0 +1,31 @@
+[tools]
+python = "3.13"
+uv = "latest"
+
+[env]
+_.file = ".env"
+_.python.venv = { path = ".venv", create = true }
+
+[tasks.setup]
+description = "Install dependencies"
+run = "uv sync"
+
+[tasks.smoke]
+description = "Check auth and telemetry endpoints (prints field names only)"
+run = "uv run python smoke.py"
+
+[tasks.collect]
+description = "Poll the API once and store a snapshot"
+run = "uv run python -m polestar.collect --once"
+
+[tasks.watch]
+description = "Poll the API in a loop"
+run = "uv run python -m polestar.collect --loop"
+
+[tasks.app]
+description = "Run the dashboard"
+run = "uv run streamlit run app.py"
+
+[tasks.test]
+description = "Run tests"
+run = "uv run pytest"

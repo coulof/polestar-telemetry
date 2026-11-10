@@ -1,0 +1,10 @@
+.env
+.venv
+.git
+data
+export
+tests
+.pytest_cache
+__pycache__
+api.json
+smoke.py

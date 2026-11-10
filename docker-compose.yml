@@ -1,0 +1,23 @@
+services:
+  collector:
+    build: .
+    command: ["python", "-m", "polestar.collect", "--loop", "--interval", "300"]
+    env_file: .env          # M2M_ENDPOINT, APP_ID, SECRET, ACCOUNT_ID
+    volumes:
+      - telemetry:/data
+    restart: unless-stopped
+
+  app:
+    build: .
+    volumes:
+      - telemetry:/data
+    environment:
+      BATTERY_KWH: ${BATTERY_KWH:-78}
+    # The dashboard has no authentication: bind to the Tailscale IP only.
+    ports:
+      - "${BIND_ADDR:-127.0.0.1}:8501:8501"
+    depends_on: [collector]
+    restart: unless-stopped
+
+volumes:
+  telemetry:
