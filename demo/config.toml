@@ -1,0 +1,33 @@
+# Synthetic demo configuration (made-up places and prices) used by demo/make_demo_db.py and demo/capture.py.
+timezone = "Europe/Stockholm"
+
+[report]
+timezone = "Europe/Stockholm"
+model = "sonnet"
+
+[[location]]
+name = "Home"
+lat = 57.6950
+lon = 11.9400
+radius_m = 100
+price_per_kwh = 0.28
+
+[[location.tariff]]
+from = "23:00"
+to = "06:00"
+price_per_kwh = 0.12
+
+[[location]]
+name = "Office car park"
+lat = 57.7089
+lon = 11.9746
+radius_m = 150
+price_per_kwh = 0.22
+
+[[location]]
+name = "Northgate Fast Charge"
+lat = 58.2840
+lon = 12.2900
+radius_m = 150
+price_per_kwh = 0.54
+session_fee = 1.0

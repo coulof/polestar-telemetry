@@ -33,3 +33,52 @@ run = "uv run python -m polestar.report --generate"
 [tasks.test]
 description = "Run tests"
 run = "uv run pytest"
+
+# Local deploy for a new setup: containers (collector + dashboard) and the weekly Claude report.
+[tasks.deploy]
+description = "Deploy locally: check prerequisites, start the stack, install the weekly Claude report"
+depends = ["deploy:claude"]
+
+[tasks."deploy:check"]
+description = "Check .env, config.toml and a container engine (creates config.toml from the example)"
+hide = true
+run = """
+set -eu
+[ -f .env ] || { echo "missing .env (M2M_ENDPOINT, APP_ID, SECRET, ACCOUNT_ID): see README" >&2; exit 1; }
+[ -f config.toml ] || { cp config.example.toml config.toml; echo "created config.toml from the example: edit it"; }
+command -v podman-compose >/dev/null || docker compose version >/dev/null 2>&1 \
+  || { echo "need podman-compose or docker compose" >&2; exit 1; }
+"""
+
+[tasks."deploy:stack"]
+description = "Build and start the collector and dashboard, wait until healthy (http://127.0.0.1:8501)"
+depends = ["deploy:check"]
+run = """
+set -eu
+chmod 644 config.toml; chmod 600 .env
+if command -v podman-compose >/dev/null; then podman-compose up -d --build; else docker compose up -d --build; fi
+for _ in $(seq 1 30); do
+  curl -fsS "http://${BIND_ADDR:-127.0.0.1}:8501/_stcore/health" >/dev/null 2>&1 && { echo "dashboard healthy"; exit 0; }
+  sleep 2
+done
+echo "dashboard did not become healthy" >&2; exit 1
+"""
+
+[tasks."deploy:claude"]
+description = "Install the weekly report timer (needs podman and a logged-in claude CLI) and check the login"
+depends = ["deploy:stack"]
+run = """
+set -eu
+command -v claude >/dev/null || { echo "claude CLI not found: install it and log in, then re-run" >&2; exit 1; }
+command -v podman >/dev/null || { echo "the report timer needs podman (weekly-report.sh uses podman exec)" >&2; exit 1; }
+printf ok | claude -p --tools "" --no-session-persistence --output-format text >/dev/null \
+  || { echo "claude is not logged in: run claude and log in" >&2; exit 1; }
+collector="$(podman ps --filter name=collector --format '{{.Names}}' | head -1)"
+unit="$HOME/.config/systemd/user"; mkdir -p "$unit"
+sed -e "s|%h/src/polestar-telemetry|$PWD|" \
+    -e "/^\\[Service\\]/a Environment=COLLECTOR=$collector" \
+    deploy/polestar-report.service > "$unit/polestar-report.service"
+cp deploy/polestar-report.timer "$unit/"
+systemctl --user daemon-reload && systemctl --user enable --now polestar-report.timer
+echo "weekly report timer enabled; run it now with: deploy/weekly-report.sh"
+"""

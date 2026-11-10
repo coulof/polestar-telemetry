@@ -4,6 +4,20 @@ Collect, store and understand your Polestar 2 usage: trips, charging, battery, c
 
 The [Polestar Data Portal API](api.json) only returns the **current state** of the car. It has no history and no trips. This app polls it, keeps every snapshot in SQLite, derives trips and charge sessions from those snapshots, and shows them in a Streamlit dashboard.
 
+<p align="center"><img src="docs/img/tour.gif" alt="Tour of the dashboard: Now, Report, Trips, Charging, Battery" width="720"></p>
+
+<p align="center">
+  <img src="docs/img/now-light.png" alt="Now tab, light theme" width="49%">
+  <img src="docs/img/now-dark.png" alt="Now tab, dark theme" width="49%">
+</p>
+<p align="center">
+  <img src="docs/img/charging.png" alt="Charging tab: cost, peak power and savings per session" width="32%">
+  <img src="docs/img/report.png" alt="Weekly report written by Claude" width="32%">
+  <img src="docs/img/now-phone.png" alt="Now tab on a phone" width="16%">
+</p>
+
+<sub>Screenshots use a synthetic car and made-up places (see [`demo/`](demo/)); the weekly report was written by the real `claude` CLI from those synthetic figures.</sub>
+
 ```
 Polestar API --> polestar/collect.py --> data/telemetry.db --> derive / insights / stats --> app.py (Streamlit)
                                                                                      \--> report.py --> claude -p --> Report tab
@@ -72,6 +86,24 @@ The **Period** selector in the sidebar filters Trips, Charging, Battery, Insight
 
 ## Deploy and operate
 
+### One-command deploy
+
+With `.env` in place (see [Credentials](#credentials-env-never-committed)), one command brings everything up:
+
+```sh
+mise run deploy
+```
+
+It runs three tasks in order, and you can run any of them on its own:
+
+| Task | What it does |
+|---|---|
+| `deploy:check` | Checks `.env`, creates `config.toml` from `config.example.toml` if missing, checks for `podman-compose` or `docker compose` |
+| `deploy:stack` | Builds and starts the collector and dashboard, waits for the health check (`http://127.0.0.1:8501`, or `BIND_ADDR`) |
+| `deploy:claude` | Checks the `claude` CLI is installed and logged in, installs the weekly report timer (Mondays 08:15) for this folder. Needs podman |
+
+With Docker you get the stack but not the report timer. The sections below cover the same steps by hand.
+
 `Dockerfile` and `docker-compose.yml` run two services that share a volume: `collector` (polls the API) and `app` (the dashboard). `config.toml` and `.env` must exist next to the compose file. Podman and Docker both work.
 
 ```sh
@@ -118,6 +150,15 @@ If a run fails (for example the CLI login expired) the Report tab keeps showing 
 ```sh
 mise run test          # 40+ tests; no network and no real claude CLI
 POLESTAR_MOCK=1 mise run app    # adds the "Compare (mock)" and "Path (mock)" design tabs
+```
+
+Regenerate the README images from a synthetic database (never real data):
+
+```sh
+uv run python demo/make_demo_db.py data/demo.db
+DB_PATH=data/demo.db CONFIG_PATH=demo/config.toml uv run python -m polestar.report --generate --week <last ISO week>   # optional: needs claude
+DB_PATH=data/demo.db CONFIG_PATH=demo/config.toml .venv/bin/python -m streamlit run app.py --server.port 8599 &
+uv run --no-project --with playwright python demo/capture.py http://localhost:8599 docs/img   # CHROME=/path/to/chrome if needed
 ```
 
 Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS.md`](AGENTS.md), which is written for coding agents and is just as useful for people.
