@@ -2,7 +2,6 @@
 import json
 import os
 import re
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -19,7 +18,7 @@ st.set_page_config(page_title="Polestar telemetry", page_icon="⚡", layout="wid
                    initial_sidebar_state="collapsed")
 st.markdown(theme.CSS, unsafe_allow_html=True)
 
-LOCAL_TZ = datetime.now().astimezone().tzinfo
+LOCAL_TZ = ZoneInfo(config.load()["timezone"])   # not the machine's: the server container runs in UTC
 
 
 @st.cache_data(ttl=60)
