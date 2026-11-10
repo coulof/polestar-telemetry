@@ -209,3 +209,7 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 3. Explore the `request_rvdc` records in the Polestar data export (meaning unverified).
 4. Saved charge locations: the API endpoint exists but returns 404 for this car, so there is nothing to import yet.
 5. A step-by-step guide to getting API access, with portal screenshots: the links and values are documented under Credentials, but the portal's own screens (registering, creating the credential, where each value is shown) are not described yet.
+
+## License
+
+[MIT](LICENSE). The bundled Inter font in `static/` has its own licence (SIL Open Font License). Not affiliated with Polestar; the API terms of the Polestar Data Portal apply to your use of the API.
