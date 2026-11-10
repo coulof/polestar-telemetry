@@ -188,7 +188,7 @@ def now_tab():
         left, right = st.columns([1, 2], vertical_alignment="center")
         soc = b.get("batteryChargeLevelPercentage")
         if pd.notna(soc):
-            left.plotly_chart(soc_gauge(soc), width="stretch", key="soc_gauge")
+            left.plotly_chart(soc_gauge(soc), width="stretch", key="soc_gauge", config={"displayModeBar": False})
         with right:
             rng = b.get("estimatedDistanceToEmptyKm")
             if pd.notna(rng):
@@ -237,6 +237,8 @@ with st.sidebar:
     if st.button("Reload data"):
         st.cache_data.clear()
 
+st.title("Polestar 2")
+
 if not os.path.exists(DB_PATH):
     st.error(f"No database at {DB_PATH}. Run `mise run collect` first.")
     st.stop()
@@ -244,8 +246,11 @@ if not os.path.exists(DB_PATH):
 data, counts = load_all(DB_PATH)
 battery, odometer, location = data["battery"], data["odometer"], data["location"]
 
+now_local = pd.Timestamp.now(tz=LOCAL_TZ)
+xrange = None   # x-axis span of time charts: the chosen period, so the axis changes even when data is sparse
 if period_days:
-    cutoff = pd.Timestamp.now(tz=LOCAL_TZ) - pd.Timedelta(days=period_days)
+    cutoff = now_local - pd.Timedelta(days=period_days)
+    xrange = [cutoff, now_local]
     battery_v = battery[battery["time"] >= cutoff] if not battery.empty else battery
 else:
     battery_v = battery
@@ -258,9 +263,10 @@ if period_days and not sessions.empty:
     sessions = sessions[sessions["start"] >= cutoff]
 sessions = derive.price_sessions(sessions, location, config.load(), battery)
 
-st.title("Polestar 2")
-tab_now, tab_report, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = st.tabs(
-    ["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"])
+MOCK = os.environ.get("POLESTAR_MOCK") == "1"   # design mock-up on synthetic data, never on the server
+tabs = st.tabs(["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
+               + (["Compare (mock)"] if MOCK else []))
+tab_now, tab_report, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = tabs[:8]
 
 # ---- now -----------------------------------------------------------------
 with tab_now:
@@ -381,6 +387,8 @@ with tab_batt:
         fig = line_chart(battery_v.dropna(subset=["batteryChargeLevelPercentage"]), "time",
                          "batteryChargeLevelPercentage", "State of charge", "%", step=True, fill=True)
         fig.update_yaxes(range=[0, 100])
+        if xrange:
+            fig.update_xaxes(range=xrange)
         p = theme.palette()
         for _, sess in sessions.tail(40).iterrows():  # shade charging sessions
             fig.add_vrect(x0=sess["start"], x1=sess["end"], fillcolor=rgba(p["good"], 0.18), line_width=0, layer="below")
@@ -422,7 +430,7 @@ with tab_ins:
                                    mode="lines+markers"), width="stretch")
     else:
         empty("Capacity estimates need a charge session that adds at least 10 % of SoC.", ":material/battery_charging_full:")
-    window = pd.Timestamp.now(tz=LOCAL_TZ) - pd.Timedelta(days=min(period_days or 14, 14))
+    window = now_local - pd.Timedelta(days=min(period_days or 14, 14))
     seg = insights.state_segments(data["availability"], derive.charge_sessions(battery), pd.Timestamp.now(tz=LOCAL_TZ))
     if not seg.empty:
         seg = seg[seg["end"] >= window].assign(start=lambda d: d["start"].clip(lower=window))
@@ -462,10 +470,11 @@ with tab_air:
             empty("Trends appear once a few readings are stored (the car reports after each measurement).",
                   ":material/hourglass_empty:")
         else:
-            st.plotly_chart(line_chart(air_v.dropna(subset=["aqi"]), "time", "aqi", "Air quality index", "index",
-                                       mode="lines+markers", step=True), width="stretch")
-            st.plotly_chart(line_chart(air_v.dropna(subset=["pm25"]), "time", "pm25", "PM2.5", "",
-                                       mode="lines+markers", step=True), width="stretch")
+            for col, title, unit in (("aqi", "Air quality index", "index"), ("pm25", "PM2.5", "")):
+                fig = line_chart(air_v.dropna(subset=[col]), "time", col, title, unit, mode="lines+markers", step=True)
+                if xrange:
+                    fig.update_xaxes(range=xrange)
+                st.plotly_chart(fig, width="stretch")
         daily = derive.air_daily(air_v, LOCAL_TZ)
         if not daily.empty:
             st.subheader("Daily summary")
@@ -492,3 +501,8 @@ with tab_data:
             "SELECT payload FROM snapshots WHERE domain=? ORDER BY ts DESC LIMIT 1", (domain,)).fetchone()[0])
         raw.pop("vin", None)
         st.json(raw)
+
+if MOCK:
+    from polestar import mock_compare
+    with tabs[8]:
+        mock_compare.render()

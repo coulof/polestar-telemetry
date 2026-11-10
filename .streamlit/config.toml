@@ -21,7 +21,7 @@ style = "normal"
 [theme.light]
 primaryColor = "#ED760E"
 backgroundColor = "#fcfcfb"
-secondaryBackgroundColor = "#f2f1ee"
+secondaryBackgroundColor = "#ECECE7"   # brand Grey 0
 textColor = "#0b0b0b"
 
 [theme.dark]

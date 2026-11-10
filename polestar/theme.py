@@ -2,21 +2,24 @@
 import streamlit as st
 
 # Polestar orange: RAL 2000 (#ED760E) on light surfaces, brand #FF7500 on dark.
-LIGHT = {"series": "#ED760E", "good": "#1baf7a", "ink": "#0b0b0b", "muted": "#52514e", "grid": "rgba(82,81,78,0.15)", "low": "#e34948", "high": "#eda100"}
-DARK = {"series": "#FF7500", "good": "#199e70", "ink": "#f0efec", "muted": "#c3c2b7", "grid": "rgba(195,194,183,0.15)", "low": "#e66767", "high": "#c98500"}
+LIGHT = {"series": "#ED760E", "good": "#1baf7a", "ink": "#0b0b0b", "muted": "#53565A", "grid": "rgba(83,86,90,0.15)", "low": "#e34948", "high": "#eda100"}
+DARK = {"series": "#FF7500", "good": "#199e70", "ink": "#f0efec", "muted": "#C8C9C7", "grid": "rgba(200,201,199,0.15)", "low": "#e66767", "high": "#c98500"}
 
 FONT = "Inter, Helvetica Neue, Helvetica, Arial, sans-serif"  # Unica77 is Helvetica-derived
 
 CSS = """
 <style>
 .block-container { padding-top: 2.2rem; max-width: 1200px; }
-h1 { font-weight: 650; letter-spacing: -0.01em; }
+h1, h2, h3 { letter-spacing: -0.02em; }   /* tight tracking, as in the brand typography sheet */
+h1 { font-weight: 650; }
 [data-testid="stMetricLabel"] { opacity: .7; }
 [data-testid="stMetricValue"] { font-weight: 600; }
-.pt-big { font-size: 2.1rem; font-weight: 650; line-height: 1.1; }
+.pt-big { font-size: 2.1rem; font-weight: 650; line-height: 1.1; letter-spacing: -0.02em; }
 .pt-sub { opacity: .7; font-size: .9rem; }
 /* status chip pinned to the top-right corner of the hero card */
 .st-key-hero { position: relative; }
+/* no chart toolbar (download / full screen) in the hero card: it collided with the status chip on phones */
+.st-key-hero [data-testid="stElementToolbar"] { display: none; }
 .st-key-hero [data-testid="stElementContainer"]:has(.pt-chip) { position: absolute; top: .8rem; right: 1rem; width: auto; z-index: 2; }
 .pt-chip { display: inline-flex; align-items: center; gap: .45rem; padding: .2rem .75rem; border-radius: 999px; font-size: .85rem; font-weight: 600; }
 .pt-dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
