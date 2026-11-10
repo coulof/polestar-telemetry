@@ -116,6 +116,16 @@ BIND_ADDR=<private-ip> podman-compose up -d --build     # or: docker compose up 
 
 With rootless podman, enable linger (`loginctl enable-linger <user>`) and install [`deploy/polestar-telemetry.service`](deploy/polestar-telemetry.service) as a systemd user unit. It waits for the private interface, then runs `podman-compose up -d` at boot.
 
+### Backups
+
+History cannot be re-fetched (the API only returns the current state), so back the database up. [`deploy/backup.sh`](deploy/backup.sh) takes an online SQLite backup from the collector container, gzips it into `~/polestar-backups` (mode 700) and keeps the newest 14 (`KEEP`, `BACKUP_DIR`). The copies contain the VIN and positions: keep them off shared storage. Nightly at 03:30:
+
+```sh
+cp deploy/polestar-backup.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now polestar-backup.timer
+deploy/backup.sh      # run it now
+```
+
 ### Update
 
 On the host, in a git clone of this repository:

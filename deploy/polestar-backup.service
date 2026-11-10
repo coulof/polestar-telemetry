@@ -1,0 +1,7 @@
+# systemd *user* unit: nightly database backup (see backup.sh). Triggered by polestar-backup.timer.
+[Unit]
+Description=Polestar telemetry database backup
+
+[Service]
+Type=oneshot
+ExecStart=%h/src/polestar-telemetry/deploy/backup.sh
