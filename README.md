@@ -82,8 +82,17 @@ BIND_ADDR=<private-ip> podman-compose up -d --build     # or: docker compose up 
 ## Roadmap
 
 1. **Air quality report** (next): the `preCleaning` domain already collects the cabin air quality index, PM2.5 and last pre-cleaning cycle. Add a dashboard tab with trends over time, a daily summary and pre-cleaning cycle history.
-2. Calibrate `BATTERY_KWH` from a complete charge session (`kwh_from_power` / SoC change).
-3. Settings view: target SoC, amp limit and charge timers; flag when charging power is below the configured limit.
-4. Tests for `client.py` and `collect.py` (mocked HTTP).
-5. Import local history into the server database.
-6. Explore the `request_rvdc` records in the Polestar data export (meaning unverified).
+2. **Insights**:
+   - Real-world range (km driven per % of SoC, extrapolated to 100 %).
+   - Battery capacity trend (kWh per % SoC per charge session); also calibrates `BATTERY_KWH`.
+   - Cost per 100 km, a monthly cost table by location, optional CO2 estimate from a configured grid factor.
+   - Daily timeline of driving / parked / charging from `availability.usageMode`.
+3. **Weekly report with "hot takes"**: the week's aggregated stats are turned into a short, number-backed summary by the Claude Code CLI (`claude -p`, uses a subscription, no API key), generated once a week and shown in a new Report tab. A systemd user timer on the host pipes `podman exec ... python -m polestar.stats` into `claude -p` and stores the result in the database (the container has no CLI). Only aggregates (no VIN or coordinates) are sent.
+4. **Charging intelligence** (needs the `pdp-charging/*` scopes):
+   - "Ready by departure" check from the parking-climate timer, target SoC and charging power.
+   - List the car's saved charge locations that are not priced yet.
+   - Time-of-use pricing (e.g. off-peak window at home) priced per reading interval.
+   - Flag charging below the configured amp limit.
+5. Tests for `client.py` and `collect.py` (mocked HTTP).
+6. Import local history into the server database.
+7. Explore the `request_rvdc` records in the Polestar data export (meaning unverified).
