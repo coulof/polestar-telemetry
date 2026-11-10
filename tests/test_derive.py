@@ -210,3 +210,12 @@ def test_very_short_trips_get_no_energy_estimate():
     o = odo([0, 5], [100_000, 100_700])
     t = derive.trips(o, bat([0, 10], [80, 80]), availability=avail([0, 5], [DRIVE, STOP]))
     assert len(t) == 1 and pd.isna(t.loc[0, "kwh"]) and pd.isna(t.loc[0, "kwh_per_100km"])
+
+
+def test_battery_kwh_argument_scales_energy_without_touching_the_module_default():
+    default = derive.BATTERY_KWH
+    o, b = odo([0, 5, 10], [100_000, 105_000, 110_000]), bat([0, 12], [80, 70])
+    a = derive.trips(o, b, battery_kwh=100)
+    base = derive.trips(o, b, battery_kwh=50)
+    assert a.loc[0, "kwh"] == 2 * base.loc[0, "kwh"]
+    assert derive.BATTERY_KWH == default

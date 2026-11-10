@@ -22,6 +22,10 @@ st.markdown(theme.CSS, unsafe_allow_html=True)
 LOCAL_TZ = ZoneInfo(config.load()["timezone"])   # not the machine's: the server container runs in UTC
 
 
+def battery_kwh():
+    return st.session_state.get("battery_kwh", derive.BATTERY_KWH)
+
+
 @st.cache_data(ttl=60)
 def load_all(path):
     with closing(connect(path)) as db:
@@ -203,7 +207,7 @@ def now_tab():
                 st.markdown(f'<div class="pt-sub">Estimated range</div><div class="pt-big" style="margin-bottom:.6rem">{rng:.0f} km</div>',
                             unsafe_allow_html=True)
             if charging:
-                sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg, battery)
+                sessions = derive.price_sessions(derive.charge_sessions(battery, battery_kwh()), location, cfg, battery)
                 cur = sessions.iloc[-1] if not sessions.empty else None
                 c = st.columns(3)
                 c[0].metric("Power", f"{(b.get('chargingPowerWatts') or 0) / 1000:.1f} kW",
@@ -246,8 +250,8 @@ def now_tab():
 # ---- sidebar -------------------------------------------------------------
 with st.sidebar:
     st.header("Settings")
-    derive.BATTERY_KWH = st.number_input("Usable battery (kWh)", 40.0, 120.0, derive.BATTERY_KWH, 1.0,
-                                         help="Used to turn SoC changes into kWh. Estimate.")
+    st.number_input("Usable battery (kWh)", 40.0, 120.0, derive.BATTERY_KWH, 1.0, key="battery_kwh",
+                    help="Used to turn SoC changes into kWh. Estimate.")   # per session: not a shared module global
     period_days = st.selectbox("Period", [7, 30, 90, 365, 0], index=1,
                                format_func=lambda d: "All" if d == 0 else f"Last {d} days")
     if st.button("Reload data"):
@@ -271,8 +275,8 @@ if period_days:
 else:
     battery_v = battery
 
-trip_table = derive.trips(odometer, battery, availability=data["availability"])
-sessions = derive.charge_sessions(battery)
+trip_table = derive.trips(odometer, battery, availability=data["availability"], battery_kwh=battery_kwh())
+sessions = derive.charge_sessions(battery, battery_kwh())
 if period_days and not trip_table.empty:
     trip_table = trip_table[trip_table["start"] >= cutoff]
 if period_days and not sessions.empty:
@@ -453,7 +457,7 @@ with tab_ins:
     else:
         empty("Capacity estimates need a charge session that adds at least 10 % of SoC.", ":material/battery_charging_full:")
     window = now_local - pd.Timedelta(days=min(period_days or 14, 14))
-    seg = insights.state_segments(data["availability"], derive.charge_sessions(battery), pd.Timestamp.now(tz=LOCAL_TZ))
+    seg = insights.state_segments(data["availability"], derive.charge_sessions(battery, battery_kwh()), pd.Timestamp.now(tz=LOCAL_TZ))
     if not seg.empty:
         seg = seg[seg["end"] >= window].assign(start=lambda d: d["start"].clip(lower=window))
     if seg.empty:

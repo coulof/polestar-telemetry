@@ -112,9 +112,9 @@ def avg_consumption(trips):
     return valid["kwh"].sum() / km * 100 if km > 0 else float("nan")
 
 
-def trips(odometer, battery, location=None, availability=None):
+def trips(odometer, battery, location=None, availability=None, battery_kwh=None):
     """One row per trip. With `availability` (usage-mode events) trips are the driving windows; otherwise
-    runs of increasing odometer readings."""
+    runs of increasing odometer readings. `battery_kwh` overrides the module default for the energy estimate."""
     cols = ["start", "end", "km", "minutes", "avg_kmh", "soc_start", "soc_end", "kwh", "kwh_per_100km"]
     if odometer.empty or "odometerMeters" not in odometer:
         return pd.DataFrame(columns=cols)
@@ -132,15 +132,15 @@ def trips(odometer, battery, location=None, availability=None):
     after = pd.Series(_asof(b, t["end"], col, "forward").to_numpy().ravel(), index=t.index)
     before = pd.Series(_asof(b, t["end"], col).to_numpy().ravel(), index=t.index)
     t["soc_end"] = after.fillna(before)          # no reading after the drive yet: use the last one before
-    t["kwh"] = (t["soc_start"] - t["soc_end"]) / 100 * BATTERY_KWH
+    t["kwh"] = (t["soc_start"] - t["soc_end"]) / 100 * (battery_kwh or BATTERY_KWH)
     t["kwh_per_100km"] = t["kwh"] / t["km"] * 100
     short = t["km"] < MIN_KM_FOR_ENERGY
     t.loc[short, ["kwh", "kwh_per_100km"]] = float("nan")
     return t[cols]
 
 
-def charge_sessions(battery):
-    """One row per charging session (consecutive charging readings)."""
+def charge_sessions(battery, battery_kwh=None):
+    """One row per charging session (consecutive charging readings). `battery_kwh` overrides the default."""
     cols = ["start", "end", "minutes", "soc_start", "soc_end", "kwh_from_soc", "kwh_from_power", "peak_kw", "type",
             "median_amps", "partial"]
     if battery.empty or "chargingStatusV2" not in battery:
@@ -167,7 +167,7 @@ def charge_sessions(battery):
             "minutes": (g["time"].iloc[-1] - g["time"].iloc[0]).total_seconds() / 60,
             "soc_start": soc.iloc[0],
             "soc_end": soc.iloc[-1],
-            "kwh_from_soc": (soc.iloc[-1] - soc.iloc[0]) / 100 * BATTERY_KWH,
+            "kwh_from_soc": (soc.iloc[-1] - soc.iloc[0]) / 100 * (battery_kwh or BATTERY_KWH),
             "kwh_from_power": kwh_power,
             "peak_kw": power.max(),
             "type": types.mode().iloc[0].removeprefix("CHARGING_TYPE_") if not types.empty else None,
