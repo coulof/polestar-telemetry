@@ -1,4 +1,6 @@
 """Shared look for the dashboard: palette, Plotly styling and CSS."""
+import html
+
 import streamlit as st
 
 # Polestar orange: RAL 2000 (#ED760E) on light surfaces, brand #FF7500 on dark.
@@ -55,7 +57,7 @@ def chip(text, on, color="green"):
     else:
         bg, fg = ("rgba(200,201,199,.15)", "#C8C9C7") if is_dark() else ("rgba(83,86,90,.10)", "#53565A")
     return (f'<span class="pt-chip{" on" if on else ""}" style="background:{bg};color:{fg}">'
-            f'<span class="pt-dot"></span>{text}</span>')
+            f'<span class="pt-dot"></span>{html.escape(str(text))}</span>')
 
 
 def palette():

@@ -24,12 +24,12 @@ LOCAL_TZ = ZoneInfo(config.load()["timezone"])   # not the machine's: the server
 
 @st.cache_data(ttl=60)
 def load_all(path):
-    db = connect(path)
-    data = {d: derive.load(db, d) for d in DOMAINS}
+    with closing(connect(path)) as db:
+        data = {d: derive.load(db, d) for d in DOMAINS}
+        counts = dict(db.execute("SELECT domain, COUNT(*) FROM snapshots GROUP BY 1").fetchall())
     for df in data.values():
         if not df.empty:
             df["time"] = df["time"].dt.tz_convert(LOCAL_TZ)
-    counts = dict(db.execute("SELECT domain, COUNT(*) FROM snapshots GROUP BY 1").fetchall())
     return data, counts
 
 
@@ -308,6 +308,8 @@ with tab_report:
         with st.expander("Numbers behind it"):
             st.json(week_stats, expanded=1)
 
+rdb.close()
+
 # ---- trips ---------------------------------------------------------------
 with tab_trips:
     if trip_table.empty:
@@ -338,6 +340,7 @@ with tab_charge:
     else:
         cdb = connect(DB_PATH)
         amp = charging.amp_limit(charging.latest_payload(cdb, "ampLimit"))
+        cdb.close()
         c = st.columns(4)
         c[0].metric("Energy (from power)", f"{sessions['kwh_from_power'].sum():.0f} kWh", border=True,
                     help=f"{len(sessions)} session(s) in this period.")
@@ -391,6 +394,7 @@ with tab_charge:
             days = ", ".join(d[:3].title() for d in t.get("weekdays") or []) or "one-off"
             rows.append((f"Ready-by timer {int(t.get('index', 0)) + 1}",
                          f"{fmt_daily(t.get('readyAt'))} ({days}), {'on' if t.get('activated') else 'off'}"))
+        cdb.close()
         st.dataframe(pd.DataFrame(rows, columns=["Setting", "Value"]), hide_index=True, width="stretch")
         if has_saving_tip and not gt_on:
             st.caption(":material/lightbulb: The car's charge timer is off, so charging starts as soon as you plug in. "
@@ -515,8 +519,9 @@ with tab_data:
     st.caption("Events are pushed only when a value changes, so quiet domains can be hours old.")
     domain = st.selectbox("Latest raw payload", DOMAINS)
     if not data[domain].empty:
-        raw = json.loads(connect(DB_PATH).execute(
-            "SELECT payload FROM snapshots WHERE domain=? ORDER BY ts DESC LIMIT 1", (domain,)).fetchone()[0])
+        with closing(connect(DB_PATH)) as ddb:
+            raw = json.loads(ddb.execute(
+                "SELECT payload FROM snapshots WHERE domain=? ORDER BY ts DESC LIMIT 1", (domain,)).fetchone()[0])
         raw.pop("vin", None)
         st.json(raw)
 

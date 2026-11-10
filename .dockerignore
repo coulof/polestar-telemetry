@@ -8,3 +8,4 @@ tests
 __pycache__
 api.json
 smoke.py
+polestar/mock_*.py
