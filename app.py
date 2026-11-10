@@ -96,10 +96,12 @@ def empty(msg, icon=":material/hourglass_empty:"):
     st.info(msg, icon=icon)
 
 
-def chips(exterior, health, pre, cfg):
+def chips(exterior, health, pre, cfg, driving=False):
     """Coloured status badges (lock, doors, service, air) as one markdown line."""
     out = []
-    if not exterior.empty:
+    if driving:     # lock and door events are hours old while the car is in use; don't show them as current
+        out.append(":orange-badge[:material/directions_car: In use]")
+    elif not exterior.empty:
         e = exterior.iloc[-1]
         out.append(":green-badge[:material/lock: Locked]" if e.get("centralLock") == "LOCK_STATUS_LOCKED"
                    else ":red-badge[:material/lock_open: Unlocked]")
@@ -181,10 +183,15 @@ def now_tab():
     b = battery.iloc[-1]
     charging = b.get("chargingStatusV2") in CHARGING_STATES
     now = pd.Timestamp.now(tz=LOCAL_TZ)
+    avail = data["availability"]
+    driving = (not avail.empty) and avail.iloc[-1].get("usageMode") in insights.DRIVING_MODES
 
     with st.container(border=True, key="hero"):
         status = str(b.get("chargingStatusV2", "")).removeprefix("CHARGING_STATUS_V2_").replace("_", " ").capitalize()
-        st.markdown(theme.chip(status or "Unknown", charging), unsafe_allow_html=True)
+        if driving:                 # what the car is doing beats its (idle) charge state
+            st.markdown(theme.chip("Driving", True, "orange"), unsafe_allow_html=True)
+        else:
+            st.markdown(theme.chip("Parked" if status in ("Idle", "") else status, charging), unsafe_allow_html=True)
         left, right = st.columns([1, 2], vertical_alignment="center")
         soc = b.get("batteryChargeLevelPercentage")
         if pd.notna(soc):
@@ -213,9 +220,10 @@ def now_tab():
                 for line_note in charging_notes(connect(DB_PATH), b, charging, now, cfg, location):
                     st.markdown(line_note)
         age = int((now - b["time"]).total_seconds() // 60)
-        st.caption(f"Last battery event {b['time']:%d %b %H:%M} ({age} min ago)")
+        st.caption(f"Last battery event {b['time']:%d %b %H:%M} ({age} min ago)"
+                   + (f" · driving since {avail.iloc[-1]['time']:%H:%M}" if driving else ""))
 
-    line_md, warn = chips(data["exterior"], data["health"], data["preCleaning"], cfg)
+    line_md, warn = chips(data["exterior"], data["health"], data["preCleaning"], cfg, driving)
     if line_md:
         st.markdown(line_md)
     if warn:
@@ -224,7 +232,12 @@ def now_tab():
     if not location.empty and "coordinate.latitude" in location:
         with st.container(border=True):
             st.plotly_chart(location_map(location.iloc[-1], cfg), width="stretch", key="car_map")
-            st.caption(f"Last position {location['time'].iloc[-1]:%d %b %H:%M}")
+            seen = location["time"].iloc[-1]
+            mins = int((now - seen).total_seconds() // 60)
+            ago = f"{mins // 60} h {mins % 60:02d} min ago" if mins >= 60 else f"{mins} min ago"
+            st.caption(f"Last position {seen:%d %b %H:%M} ({ago})")
+            if driving and seen < avail.iloc[-1]["time"]:
+                st.caption(":material/info: No position reported since the drive began; the pin is where the car was last seen.")
 
 
 # ---- sidebar -------------------------------------------------------------

@@ -43,12 +43,15 @@ def is_dark():
         return False
 
 
-def chip(text, on):
-    """HTML for the status chip: green and gently pulsing while `on`, grey otherwise."""
-    if on:
+def chip(text, on, color="green"):
+    """HTML for the status chip: tinted and gently pulsing while `on` (green for charging, orange for
+    driving), grey otherwise."""
+    if on and color == "orange":
+        bg, fg = ("rgba(255,117,0,.22)", "#FFA45C") if is_dark() else ("rgba(237,118,14,.14)", "#9A4A05")
+    elif on:
         bg, fg = ("rgba(25,158,112,.22)", "#6fdcb2") if is_dark() else ("rgba(27,175,122,.15)", "#0b6b4a")
     else:
-        bg, fg = ("rgba(195,194,183,.15)", "#c3c2b7") if is_dark() else ("rgba(82,81,78,.10)", "#52514e")
+        bg, fg = ("rgba(200,201,199,.15)", "#C8C9C7") if is_dark() else ("rgba(83,86,90,.10)", "#53565A")
     return (f'<span class="pt-chip{" on" if on else ""}" style="background:{bg};color:{fg}">'
             f'<span class="pt-dot"></span>{text}</span>')
 
