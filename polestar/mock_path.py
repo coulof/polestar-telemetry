@@ -20,8 +20,6 @@ from . import theme
 # made-up places (lat, lon)
 PLACES = {"Home": (57.7030, 11.9660), "Work": (57.7400, 12.0720), "Gym": (57.6900, 12.0100),
           "Supermarket": (57.7120, 11.9400), "Parents": (57.5000, 11.7500), "Beach house": (57.7960, 10.5200)}
-GOLD = "#F6BE00"
-OLDER_GREY = "#B1B3B3"            # brand Grey 5
 
 
 def km_between(a, b):
@@ -64,8 +62,7 @@ def synth_trips(today, days=60):
             add(d, 10.5, errand); add(d, 11.6, "Home")
         elif wd == 6 and rng.random() < 0.12:
             add(d, 11.0, "Parents"); add(d, 16.5, "Home")
-    t = pd.DataFrame(rows)
-    return t[t["start"] <= pd.Timestamp.now()].reset_index(drop=True)
+    return pd.DataFrame(rows)
 
 
 def curve(a, b, n=14):
@@ -94,7 +91,8 @@ def lines(trips):
 
 def stays(trips, window_start, now):
     """Rows for the stays timeline: (start, end, row, kind)."""
-    rows, here, since = [], "Home", pd.Timestamp(window_start)
+    here = trips["frm"].iloc[0] if len(trips) else "Home"     # where the car stood before its first trip in view
+    rows, since = [], pd.Timestamp(window_start)
     for _, t in trips.iterrows():
         rows.append((since, t["start"], here, "Stay"))
         rows.append((t["start"], t["end"], "Driving", "Driving"))
@@ -137,14 +135,14 @@ def trail_figure(trips, days, zoom="Follow"):
         recent = trips[(day >= d - pd.Timedelta(days=6)) & (day < d)]
         today = trips[day == d]
         upto = trips[day <= d]
-        here = upto["to"].iloc[-1] if len(upto) else "Home"
+        here = upto["to"].iloc[-1] if len(upto) else (trips["frm"].iloc[0] if len(trips) else "Home")
+        old_l, recent_l, today_l = lines(old), lines(recent), lines(today)    # each curve set built once
         # the camera jumps to where the day happened: origin, destination and everything in between
-        tlat, tlon = lines(today)
-        view = fit_view(tlat, tlon) if len(today) else fit_view([PLACES[here][0]] * 2, [PLACES[here][1]] * 2, hi=10.5, lo=10.5)
+        view = fit_view(*today_l) if len(today) else fit_view([PLACES[here][0]] * 2, [PLACES[here][1]] * 2, hi=10.5, lo=10.5)
         return [
-            go.Scattermap(lat=lines(old)[0], lon=lines(old)[1], mode="lines", line=dict(width=2, color=OLDER_GREY), name="older", hoverinfo="skip"),
-            go.Scattermap(lat=lines(recent)[0], lon=lines(recent)[1], mode="lines", line=dict(width=3, color=GOLD), name="last 7 days", hoverinfo="skip"),
-            go.Scattermap(lat=lines(today)[0], lon=lines(today)[1], mode="lines", line=dict(width=5, color=p["series"]), name="that day", hoverinfo="skip"),
+            go.Scattermap(lat=old_l[0], lon=old_l[1], mode="lines", line=dict(width=2, color=p["faint"]), name="older", hoverinfo="skip"),
+            go.Scattermap(lat=recent_l[0], lon=recent_l[1], mode="lines", line=dict(width=3, color=p["baseline"]), name="last 7 days", hoverinfo="skip"),
+            go.Scattermap(lat=today_l[0], lon=today_l[1], mode="lines", line=dict(width=5, color=p["series"]), name="that day", hoverinfo="skip"),
             go.Scattermap(lat=[PLACES[here][0]], lon=[PLACES[here][1]], mode="markers", marker=dict(size=19, color=p["series"]), name="car", hoverinfo="skip"),
         ], f"{d:%a %d %b}  ·  {len(today)} trip(s)  ·  {today['km'].sum():.0f} km", view
 
@@ -185,7 +183,7 @@ def timeline_figure(trips, now, days=7):
     df = stays(trips[trips["end"] >= start], start, pd.Timestamp(now))
     order = ["Driving"] + [n for n in PLACES if n in set(df["row"])]
     fig = px.timeline(df, x_start="start", x_end="end", y="row", color="kind", category_orders={"row": order},
-                      color_discrete_map={"Stay": GOLD, "Driving": p["series"]})
+                      color_discrete_map={"Stay": p["baseline"], "Driving": p["series"]})
     fig.update_traces(marker=dict(cornerradius=4))
     fig.update_yaxes(title=None, autorange="reversed")
     fig.update_xaxes(title=None)
@@ -214,12 +212,13 @@ def render():
     zoom = st.segmented_control("Map", ["Follow", "City", "Region"], default="Follow", key="path_zoom",
                                 help="Follow: the map jumps to each day's trips as you move the slider.") or "Follow"
     trips = synth_trips(today)
+    trips = trips[trips["start"] <= now].reset_index(drop=True)   # not cached: the clock moves
     days = list(pd.date_range(today - dt.timedelta(days=n - 1), today))
     in_span = trips[trips["start"] >= pd.Timestamp(days[0])].reset_index(drop=True)
 
     st.subheader("Path")
     st.plotly_chart(trail_figure(in_span, days, zoom), width="stretch", config={"displayModeBar": False})
-    st.caption("Press Play or drag the day slider: the map jumps to that day's start and destination. Orange: that day. Gold: the 7 days before. Grey: older. "
+    st.caption("Press Play or drag the day slider: the map jumps to that day's start and destination. Orange: that day. Dark grey: the 7 days before. Light grey: older. "
                "Lines are gentle curves between stops: the car does not report its route, only where it parks.")
 
     st.subheader("Timeline")

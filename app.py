@@ -2,6 +2,7 @@
 import json
 import os
 import re
+from contextlib import closing
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -217,7 +218,9 @@ def now_tab():
                 place = cur["location"] if cur is not None and isinstance(cur["location"], str) else None
                 c[2].metric("Cost", cost, place, delta_color="off", delta_arrow="off", help=note)
             if charging or b.get("chargerConnectionStatus") == "CHARGER_CONNECTION_STATUS_CONNECTED":
-                for line_note in charging_notes(connect(DB_PATH), b, charging, now, cfg, location):
+                with closing(connect(DB_PATH)) as ndb:      # this fragment reruns every minute: do not leak connections
+                    notes = charging_notes(ndb, b, charging, now, cfg, location)
+                for line_note in notes:
                     st.markdown(line_note)
         age = int((now - b["time"]).total_seconds() // 60)
         st.caption(f"Last battery event {b['time']:%d %b %H:%M} ({age} min ago)"

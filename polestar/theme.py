@@ -2,8 +2,10 @@
 import streamlit as st
 
 # Polestar orange: RAL 2000 (#ED760E) on light surfaces, brand #FF7500 on dark.
-LIGHT = {"series": "#ED760E", "good": "#1baf7a", "ink": "#0b0b0b", "muted": "#53565A", "grid": "rgba(83,86,90,0.15)", "low": "#e34948", "high": "#eda100"}
-DARK = {"series": "#FF7500", "good": "#199e70", "ink": "#f0efec", "muted": "#C8C9C7", "grid": "rgba(200,201,199,0.15)", "low": "#e66767", "high": "#c98500"}
+LIGHT = {"series": "#ED760E", "good": "#1baf7a", "ink": "#0b0b0b", "muted": "#53565A", "grid": "rgba(83,86,90,0.15)", "low": "#e34948", "high": "#eda100",
+         "baseline": "#75787B", "faint": "#C8C9C7"}   # brand Grey 9 / Grey 3: comparison and background series
+DARK = {"series": "#FF7500", "good": "#199e70", "ink": "#f0efec", "muted": "#C8C9C7", "grid": "rgba(200,201,199,0.15)", "low": "#e66767", "high": "#c98500",
+        "baseline": "#B1B3B3", "faint": "#53565A"}   # brand Grey 5 / Grey 11
 
 FONT = "Inter, Helvetica Neue, Helvetica, Arial, sans-serif"  # Unica77 is Helvetica-derived
 
