@@ -5,12 +5,14 @@ services:
     env_file: .env          # M2M_ENDPOINT, APP_ID, SECRET, ACCOUNT_ID
     volumes:
       - telemetry:/data
+      - ./config.toml:/app/config.toml:ro,z   # poll intervals, priced locations
     restart: unless-stopped
 
   app:
     build: .
     volumes:
       - telemetry:/data
+      - ./config.toml:/app/config.toml:ro,z
     environment:
       BATTERY_KWH: ${BATTERY_KWH:-78}
     # The dashboard has no authentication: bind to the Tailscale IP only.

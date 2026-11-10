@@ -10,6 +10,8 @@ import sqlite3
 
 import pandas as pd
 
+from . import config
+
 BATTERY_KWH = float(os.environ.get("BATTERY_KWH", 78))  # usable; unverified for this variant
 TRIP_GAP_S = 15 * 60       # odometer readings further apart than this start a new trip
 CHARGE_GAP_S = 2 * 3600    # charging readings further apart than this start a new session
@@ -33,13 +35,17 @@ def load(db, domain):
     return df
 
 
-def _asof(df, times, cols, direction="backward"):
-    """Nearest value of `cols` at/before (or at/after) each time, within 1h (NaN if none)."""
+def _asof(df, times, cols, direction="backward", tolerance="1h"):
+    """Nearest value of `cols` at/before (or at/after) each time, within `tolerance` (None = any)."""
     if df.empty:
         return pd.DataFrame({c: [float("nan")] * len(times) for c in cols})
-    left = pd.DataFrame({"time": pd.to_datetime(times, utc=True)})
+    # normalise both sides to UTC/ns: callers may hold local-tz or different-resolution times
+    utc_ns = "datetime64[ns, UTC]"
+    left = pd.DataFrame({"time": pd.to_datetime(times, utc=True).astype(utc_ns)})
+    right = df[["time", *cols]].assign(time=df["time"].dt.tz_convert("UTC").astype(utc_ns))
     out = pd.merge_asof(
-        left, df[["time", *cols]], on="time", direction=direction, tolerance=pd.Timedelta("1h")
+        left, right, on="time", direction=direction,
+        tolerance=pd.Timedelta(tolerance) if tolerance else None,
     )
     return out[cols]
 
@@ -125,3 +131,24 @@ def idle_drain(battery, trip_table):
         ok &= ~((prev["time"] < tr["end"]) & (b["time"] > tr["start"]))
     out = pd.DataFrame({"date": b.loc[ok, "time"].dt.date, "soc_lost_pct": drop[ok]})
     return out.groupby("date", as_index=False)["soc_lost_pct"].sum()
+
+
+def price_sessions(sessions, location, cfg):
+    """Add location, price_per_kwh and cost (EUR) to charge sessions.
+
+    The car is assumed to be where it last reported a position before the session started."""
+    out = sessions.copy()
+    names, prices = [], []
+    lat_col, lon_col = "coordinate.latitude", "coordinate.longitude"
+    if len(out) and not location.empty and lat_col in location:
+        pos = _asof(location, out["start"], [lat_col, lon_col], tolerance=None)
+        matches = [config.match_location(cfg, la, lo) for la, lo in zip(pos[lat_col], pos[lon_col])]
+    else:
+        matches = [config.match_location(cfg, None, None)] * len(out)
+    for name, price in matches:
+        names.append(name)
+        prices.append(price)
+    out["location"] = names
+    out["price_per_kwh"] = pd.to_numeric(pd.Series(prices, index=out.index), errors="coerce")
+    out["cost"] = out["kwh_from_power"] * out["price_per_kwh"]
+    return out

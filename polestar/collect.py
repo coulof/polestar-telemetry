@@ -8,7 +8,9 @@ from datetime import datetime, timezone
 
 import httpx
 
+from . import config
 from .client import DOMAINS, PolestarClient
+from .derive import CHARGING_STATES
 
 DB_PATH = os.environ.get("DB_PATH", "data/telemetry.db")
 
@@ -77,16 +79,34 @@ def collect_once(client, db):
     return new
 
 
+def is_active(db):
+    """True while the car is charging or being driven (latest events)."""
+    def latest(domain, key):
+        row = db.execute(
+            "SELECT json_extract(payload, ?) FROM snapshots WHERE domain = ? ORDER BY ts DESC LIMIT 1",
+            (f"$.{key}", domain),
+        ).fetchone()
+        return row[0] if row else None
+
+    return latest("battery", "chargingStatusV2") in CHARGING_STATES or latest(
+        "availability", "usageMode"
+    ) in ("USAGE_MODE_DRIVING", "USAGE_MODE_ACTIVE", "USAGE_MODE_ENGINE_ON")
+
+
 def main():
     ap = argparse.ArgumentParser()
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--once", action="store_true")
     mode.add_argument("--loop", action="store_true")
-    ap.add_argument("--interval", type=int, default=300, help="seconds between polls")
+    ap.add_argument("--interval", type=int, help="seconds between polls when idle (overrides config.toml)")
+    ap.add_argument("--interval-active", type=int, help="seconds while charging/driving (overrides config.toml)")
     args = ap.parse_args()
 
     client, db = PolestarClient(), connect()
     while True:
+        cfg = config.load()  # re-read each cycle so edits apply without a restart
+        idle = args.interval or cfg["interval"]
+        active = args.interval_active or cfg["interval_active"]
         stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
         try:
             print(stamp, "new rows:", collect_once(client, db), flush=True)
@@ -94,7 +114,7 @@ def main():
             print(stamp, "error:", type(e).__name__, flush=True)
         if args.once:
             break
-        time.sleep(args.interval)
+        time.sleep(active if is_active(db) else idle)
 
 
 if __name__ == "__main__":

@@ -69,3 +69,40 @@ def test_idle_drain_excludes_trips_and_charging():
     d = derive.idle_drain(b, trip)
     # 80->79 parked (1); 79->75 overlaps the trip (ignored); 75->74 parked (1)
     assert d["soc_lost_pct"].tolist() == [2]
+
+
+CFG = {
+    "interval": 300, "interval_active": 60, "default_price": None,
+    "locations": [
+        {"name": "Home", "lat": 50.0, "lon": 3.0, "radius_m": 100, "price_per_kwh": 0.0},
+        {"name": "Work", "lat": 50.1, "lon": 3.1, "radius_m": 150, "price_per_kwh": 0.2},
+    ],
+}
+
+
+def test_price_sessions_matches_location_at_session_start():
+    sessions = pd.DataFrame({"start": ts(100, 500, 900), "kwh_from_power": [10.0, 10.0, 10.0]})
+    loc = pd.DataFrame({
+        "time": ts(0, 400, 800),
+        "coordinate.latitude": [50.0, 50.1, 51.0],
+        "coordinate.longitude": [3.0, 3.1, 4.0],
+    })
+    out = derive.price_sessions(sessions, loc, CFG)
+    assert out["location"].tolist()[:2] == ["Home", "Work"]
+    assert pd.isna(out["location"].iloc[2])
+    assert out["cost"].iloc[:2].tolist() == [0.0, 2.0]
+    assert pd.isna(out["cost"].iloc[2])  # unknown place, no default price
+
+
+def test_price_sessions_without_location_data():
+    s = pd.DataFrame({"start": ts(0), "kwh_from_power": [5.0]})
+    out = derive.price_sessions(s, pd.DataFrame(), {**CFG, "default_price": 0.3})
+    assert out["cost"].iloc[0] == 1.5
+
+
+def test_asof_accepts_local_timezone_times():
+    loc = pd.DataFrame({"time": ts(0, 400), "coordinate.latitude": [1.0, 2.0], "coordinate.longitude": [1.0, 2.0]})
+    loc["time"] = loc["time"].dt.tz_convert("Europe/Paris").astype("datetime64[us, Europe/Paris]")
+    s = pd.DataFrame({"start": ts(500), "kwh_from_power": [1.0]})
+    out = derive.price_sessions(s, loc, {**CFG, "locations": [{"name": "X", "lat": 2.0, "lon": 2.0, "radius_m": 50, "price_per_kwh": 1.0}]})
+    assert out["location"].iloc[0] == "X"

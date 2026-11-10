@@ -1,0 +1,23 @@
+# Copy to config.toml (gitignored) and adjust. Re-read on every poll: no restart needed.
+# Override path with CONFIG_PATH; `--interval` / `--interval-active` on the collector win over this file.
+
+[poll]
+interval = 300          # seconds between polls when parked/idle
+interval_active = 60    # seconds while charging or driving (battery events arrive every ~2-6 min)
+
+[pricing]
+# default_price_per_kwh = 0.25   # for charges away from any listed location; unset = cost unknown
+
+[[location]]
+name = "Home"
+lat = 0.0
+lon = 0.0
+radius_m = 100
+price_per_kwh = 0.0
+
+[[location]]
+name = "Example fast charger"
+lat = 1.0
+lon = 1.0
+radius_m = 150
+price_per_kwh = 0.20

@@ -1,13 +1,14 @@
 """Streamlit dashboard over data/telemetry.db. Run: mise run app"""
 import json
 import os
+import re
 from datetime import datetime
 
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from polestar import derive
+from polestar import config, derive
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 
@@ -90,6 +91,7 @@ if days and not trip_table.empty:
     trip_table = trip_table[trip_table["start"] >= cutoff]
 if days and not sessions.empty:
     sessions = sessions[sessions["start"] >= cutoff]
+sessions = derive.price_sessions(sessions, location, config.load())
 
 st.title("Polestar 2 telemetry")
 tab_now, tab_trips, tab_charge, tab_batt, tab_data = st.tabs(["Now", "Trips", "Charging", "Battery", "Data"])
@@ -111,12 +113,13 @@ with tab_now:
         st.caption(f"Last battery event {b['time']:%d %b %H:%M} ({int(age.total_seconds() // 60)} min ago)")
     if not exterior.empty:
         e = exterior.iloc[-1]
-        open_parts = [c.removesuffix("Door").removesuffix("Window") + (" door" if c.endswith("Door") else " window" if c.endswith("Window") else "")
+        open_parts = [re.sub(r"(?<=[a-z])(?=[A-Z])", " ", c).lower()
                       for c in e.index if str(e[c]) == "OPEN_STATUS_OPEN"]
-        locked = e.get("centralLock") == "LOCK_STATUS_LOCKED"
-        c = st.columns(2)
-        c[0].metric("Lock", "Locked" if locked else "Unlocked")
-        c[1].metric("Open", ", ".join(open_parts) or "Nothing")
+        lock = (":material/lock: Locked" if e.get("centralLock") == "LOCK_STATUS_LOCKED"
+                else ":red[:material/lock_open: Unlocked]")
+        closed = (":material/check_circle: All closed" if not open_parts
+                  else f":red[:material/warning: Open: {', '.join(open_parts)}]")
+        st.markdown(f"{lock} &nbsp;·&nbsp; {closed}")
     if not health.empty:
         h = health.iloc[-1]
         c = st.columns(2)
@@ -152,10 +155,13 @@ with tab_charge:
     if sessions.empty:
         empty("No charging sessions yet.")
     else:
-        c = st.columns(3)
+        c = st.columns(4)
         c[0].metric("Sessions", len(sessions))
         c[1].metric("Energy (from power)", f"{sessions['kwh_from_power'].sum():.0f} kWh")
         c[2].metric("Peak power", f"{sessions['peak_kw'].max():.1f} kW")
+        priced = sessions["cost"].notna()
+        c[3].metric("Cost", f"€{sessions['cost'].sum():.2f}",
+                    help=f"{int(priced.sum())} of {len(sessions)} sessions at a priced location (config.toml)")
         pick = st.selectbox("Session", sessions.index[::-1],
                             format_func=lambda i: f"{sessions.loc[i, 'start']:%d %b %H:%M} · {sessions.loc[i, 'type'] or '?'}")
         s = sessions.loc[pick]
@@ -165,11 +171,11 @@ with tab_charge:
                         width="stretch")
         st.caption(f"SoC {s['soc_start']:.0f} → {s['soc_end']:.0f} %, "
                    f"{s['kwh_from_power']:.1f} kWh from power / {s['kwh_from_soc']:.1f} kWh from SoC.")
-        price = st.number_input("Price (€/kWh, optional)", 0.0, 2.0, 0.0, 0.01)
-        if price:
-            st.metric("Cost of selected session", f"€{s['kwh_from_power'] * price:.2f}")
+        place = s["location"] if isinstance(s["location"], str) else "unpriced location"
+        cost = f"€{s['cost']:.2f} at €{s['price_per_kwh']:.2f}/kWh" if pd.notna(s["cost"]) else "cost unknown"
+        st.caption(f"{place}: {cost}")
         with st.expander("Table"):
-            st.dataframe(sessions.round({"minutes": 1, "kwh_from_soc": 1, "kwh_from_power": 1, "peak_kw": 1}), hide_index=True, width="stretch")
+            st.dataframe(sessions.round({"minutes": 1, "kwh_from_soc": 1, "kwh_from_power": 1, "peak_kw": 1, "price_per_kwh": 2, "cost": 2}), hide_index=True, width="stretch")
 
 # ---- battery -------------------------------------------------------------
 with tab_batt:

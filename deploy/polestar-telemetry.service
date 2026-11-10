@@ -1,0 +1,23 @@
+# systemd *user* unit: starts the compose stack at boot (needs `loginctl enable-linger <user>`).
+# Install: cp to ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now polestar-telemetry
+[Unit]
+Description=Polestar telemetry (podman-compose)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Restart=on-failure
+RestartSec=30
+WorkingDirectory=%h/src/polestar-telemetry
+Environment=BIND_ADDR=100.64.0.1
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# The dashboard binds to the Tailscale IP; wait for the interface to have it.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do ip -4 addr show tailscale0 | grep -q "$BIND_ADDR" && exit 0; sleep 2; done; echo "tailscale IP not up" >&2; exit 1'
+ExecStart=%h/.local/bin/podman-compose up -d
+ExecStop=%h/.local/bin/podman-compose down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target
