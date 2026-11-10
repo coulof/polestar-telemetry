@@ -5,6 +5,7 @@ import tomllib
 
 DEFAULT_PATH = "config.toml"
 DEFAULTS = {"interval": 300, "interval_active": 60, "radius_m": 150}
+SERVICE_DEFAULTS = {"warn_days": 30, "warn_km": 1500}
 
 
 def load(path=None):
@@ -18,6 +19,7 @@ def load(path=None):
     return {
         "interval": int(poll["interval"]),
         "interval_active": int(poll["interval_active"]),
+        "service": {**SERVICE_DEFAULTS, **raw.get("service", {})},
         "default_price": raw.get("pricing", {}).get("default_price_per_kwh"),
         "locations": [
             {"radius_m": DEFAULTS["radius_m"], **loc} for loc in raw.get("location", [])
@@ -44,3 +46,13 @@ def match_location(cfg, lat, lon):
     if best:
         return best[1]["name"], best[1]["price_per_kwh"]
     return None, cfg["default_price"]
+
+
+def service_status(cfg, days, km):
+    """'ok' | 'soon' (within the warn thresholds) | 'overdue', for whichever limit is closest."""
+    if (days is not None and days <= 0) or (km is not None and km <= 0):
+        return "overdue"
+    soon = cfg["service"]
+    if (days is not None and days <= soon["warn_days"]) or (km is not None and km <= soon["warn_km"]):
+        return "soon"
+    return "ok"

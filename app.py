@@ -122,9 +122,16 @@ with tab_now:
         st.markdown(f"{lock} &nbsp;·&nbsp; {closed}")
     if not health.empty:
         h = health.iloc[-1]
-        c = st.columns(2)
-        c[0].metric("Next service in", f"{h.get('daysToService', float('nan')):.0f} days")
-        c[1].metric("…or", f"{h.get('distanceToServiceKm', float('nan')):,.0f} km")
+        days, km = h.get("daysToService"), h.get("distanceToServiceKm")
+        if pd.notna(days) and pd.notna(km):
+            cfg = config.load()
+            state = config.service_status(cfg, days, km)
+            msg = f"Service due in **{days:,.0f} days** or **{km:,.0f} km**, whichever comes first"
+            if state == "ok":
+                st.markdown(f":material/build: {msg}")
+            else:
+                st.warning(msg if state == "soon" else "Service is overdue",
+                           icon=":material/build:" if state == "soon" else ":material/error:")
     if not location.empty and "coordinate.latitude" in location:
         loc = location.iloc[-1]
         st.map(pd.DataFrame({"lat": [loc["coordinate.latitude"]], "lon": [loc["coordinate.longitude"]]}), zoom=13)

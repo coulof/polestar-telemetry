@@ -21,3 +21,11 @@ price_per_kwh = 0.1
     assert cfg["interval"] == 120 and cfg["interval_active"] == 60
     assert config.match_location(cfg, 50.0005, 3.0) == ("A", 0.1)   # ~55 m
     assert config.match_location(cfg, 50.01, 3.0) == (None, None)    # ~1.1 km
+
+
+def test_service_status(tmp_path):
+    cfg = config.load(tmp_path / "missing.toml")
+    assert config.service_status(cfg, 507, 23803) == "ok"
+    assert config.service_status(cfg, 20, 23803) == "soon"
+    assert config.service_status(cfg, 507, 1200) == "soon"
+    assert config.service_status(cfg, 0, 5000) == "overdue"
