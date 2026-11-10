@@ -11,9 +11,11 @@ import sqlite3
 import pandas as pd
 
 from . import config
+from .insights import DRIVING_MODES
 
 BATTERY_KWH = float(os.environ.get("BATTERY_KWH", 78))  # usable; unverified for this variant
-TRIP_GAP_S = 15 * 60       # odometer readings further apart than this start a new trip
+TRIP_GAP_S = 15 * 60       # fallback (no usage-mode data): odometer readings further apart than this start a new trip
+TRIP_MERGE_GAP_S = 10 * 60  # driving windows separated by a stop shorter than this are one trip
 CHARGE_GAP_S = 2 * 3600    # charging readings further apart than this start a new session
 CHARGING_STATES = {
     "CHARGING_STATUS_V2_CHARGING",
@@ -50,11 +52,45 @@ def _asof(df, times, cols, direction="backward", tolerance="1h"):
     return out[cols]
 
 
-def trips(odometer, battery, location=None):
-    """One row per trip: a run of increasing odometer readings with no big gaps."""
-    cols = ["start", "end", "km", "minutes", "avg_kmh", "soc_start", "soc_end", "kwh", "kwh_per_100km"]
-    if odometer.empty or "odometerMeters" not in odometer:
-        return pd.DataFrame(columns=cols)
+def _driving_windows(availability):
+    """(start, end) of each completed drive from `usageMode` events, merging stops shorter than
+    TRIP_MERGE_GAP_S. A drive still in progress has no end yet and is left out."""
+    a = availability.dropna(subset=["usageMode"]).sort_values("time")
+    wins, start = [], None
+    for t, mode in zip(a["time"], a["usageMode"]):
+        if mode in DRIVING_MODES and start is None:
+            start = t
+        elif mode not in DRIVING_MODES and start is not None:
+            wins.append((start, t))
+            start = None
+    merged = []
+    for s_, e_ in wins:
+        if merged and (s_ - merged[-1][1]).total_seconds() <= TRIP_MERGE_GAP_S:
+            merged[-1] = (merged[-1][0], e_)
+        else:
+            merged.append((s_, e_))
+    return merged
+
+
+def _trips_from_windows(odometer, availability):
+    """Trips from driving windows: the car reports the odometer only when a drive starts and ends, so the
+    distance is the odometer change across the window (start value: last reading before it; end value: the
+    latest reading up to 10 minutes after it, as the end reading can arrive just before the mode change)."""
+    o = odometer.dropna(subset=["odometerMeters"]).sort_values("time")
+    rows = []
+    for s_, e_ in _driving_windows(availability):
+        before = o[o["time"] <= s_]
+        after = o[(o["time"] > s_) & (o["time"] <= e_ + pd.Timedelta(minutes=10))]
+        if before.empty or after.empty:
+            continue
+        km = (after["odometerMeters"].max() - before["odometerMeters"].iloc[-1]) / 1000
+        if km > 0:
+            rows.append({"start": s_, "end": e_, "km": km})
+    return pd.DataFrame(rows, columns=["start", "end", "km"])
+
+
+def _trips_from_odometer(odometer):
+    """Fallback without usage-mode data: a run of increasing odometer readings with no big gaps."""
     o = odometer.dropna(subset=["odometerMeters"]).sort_values("time").reset_index(drop=True)
     o["km_total"] = o["odometerMeters"] / 1000
     moved = o["km_total"].diff() > 0
@@ -67,14 +103,29 @@ def trips(odometer, battery, location=None):
         first = o.loc[g.index[0] - 1]
         last = g.iloc[-1]
         rows.append({"start": first["time"], "end": last["time"], "km": last["km_total"] - first["km_total"]})
-    t = pd.DataFrame(rows, columns=["start", "end", "km"])
+    return pd.DataFrame(rows, columns=["start", "end", "km"])
+
+
+def trips(odometer, battery, location=None, availability=None):
+    """One row per trip. With `availability` (usage-mode events) trips are the driving windows; otherwise
+    runs of increasing odometer readings."""
+    cols = ["start", "end", "km", "minutes", "avg_kmh", "soc_start", "soc_end", "kwh", "kwh_per_100km"]
+    if odometer.empty or "odometerMeters" not in odometer:
+        return pd.DataFrame(columns=cols)
+    if availability is not None and not availability.empty and "usageMode" in availability:
+        t = _trips_from_windows(odometer, availability)
+    else:
+        t = _trips_from_odometer(odometer)
     if t.empty:
         return pd.DataFrame(columns=cols)
     t["minutes"] = (t["end"] - t["start"]).dt.total_seconds() / 60
     t["avg_kmh"] = t["km"] / (t["minutes"] / 60)
     b = battery.dropna(subset=["batteryChargeLevelPercentage"]) if not battery.empty else battery
     t["soc_start"] = _asof(b, t["start"], ["batteryChargeLevelPercentage"]).to_numpy().ravel()
-    t["soc_end"] = _asof(b, t["end"], ["batteryChargeLevelPercentage"], "forward").to_numpy().ravel()
+    col = ["batteryChargeLevelPercentage"]
+    after = pd.Series(_asof(b, t["end"], col, "forward").to_numpy().ravel(), index=t.index)
+    before = pd.Series(_asof(b, t["end"], col).to_numpy().ravel(), index=t.index)
+    t["soc_end"] = after.fillna(before)          # no reading after the drive yet: use the last one before
     t["kwh"] = (t["soc_start"] - t["soc_end"]) / 100 * BATTERY_KWH
     t["kwh_per_100km"] = t["kwh"] / t["km"] * 100
     return t[cols]
@@ -120,8 +171,8 @@ def charge_sessions(battery):
 
 def derive_all(path):
     db = sqlite3.connect(path)
-    b, o = load(db, "battery"), load(db, "odometer")
-    return trips(o, b), charge_sessions(b)
+    b, o, a = load(db, "battery"), load(db, "odometer"), load(db, "availability")
+    return trips(o, b, availability=a), charge_sessions(b)
 
 
 def idle_drain(battery, trip_table):

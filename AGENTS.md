@@ -28,6 +28,7 @@ Search code with `rg`. Run tests after any change to `polestar/`.
 - Streamlit: use `width="stretch"` (not `use_container_width`).
 - Charging settings (`targetSoc`, `ampLimit`, timers) are read-only snapshots via `polestar/charging.py`. `chargeLocations` and `isAtChargeLocation` return 404 for this car; the collector skips 404s silently. Timer times are local at the stored `offsetMinutes`.
 - Time-of-use tariffs are priced per reading interval in `derive.price_sessions` (pass `battery`); it also returns `cost_cheapest` and `saving` (peak energy at the cheapest rate). The Now tab shows charging notes for exceptions only; avoid adding always-on lines to the hero card.
+- **Trips come from `usageMode` driving windows**, not odometer cadence. Observed on 10 Nov: the car reports the odometer once when a drive starts and once when it ends (no events in between) and sends no location while driving, so `derive.trips(..., availability=...)` takes the distance as the odometer change across the window and merges stops shorter than `TRIP_MERGE_GAP_S` (10 min, an assumption). The odometer-gap method is only the fallback without usage-mode data. There is no route to draw, only start and end.
 - Several processes share the SQLite file; `connect()` enables WAL.
 
 ## Brand and colours

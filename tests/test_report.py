@@ -32,6 +32,8 @@ def db(tmp_path):
     # 2026-W20 = Mon 11 May .. Sun 17 May. One 30 km trip (6 % SoC) on Tue 12 May, one charge on Wed 13 May.
     for k in range(7):
         n += 1; snap(d, n, "odometer", epoch(12, 7, 5 * k), odometerMeters=5_000_000 + 5_000 * k)
+    n += 1; snap(d, n, "availability", epoch(12, 7), usageMode="USAGE_MODE_DRIVING")
+    n += 1; snap(d, n, "availability", epoch(12, 7, 30), usageMode="USAGE_MODE_INACTIVE")
     n += 1; snap(d, n, "battery", epoch(12, 7), batteryChargeLevelPercentage=70, chargingStatusV2="CHARGING_STATUS_V2_IDLE")
     n += 1; snap(d, n, "battery", epoch(12, 8), batteryChargeLevelPercentage=64, chargingStatusV2="CHARGING_STATUS_V2_IDLE")
     for k in range(5):

@@ -80,7 +80,7 @@ def weekly(db, wid, now=None):
     battery, odometer = derive.load(db, "battery"), derive.load(db, "odometer")
     location, availability = derive.load(db, "location"), derive.load(db, "availability")
     health, pre = derive.load(db, "health"), derive.load(db, "preCleaning")
-    trips = derive.trips(odometer, battery)
+    trips = derive.trips(odometer, battery, availability=availability)
     sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg, battery)
 
     def window(a, b):

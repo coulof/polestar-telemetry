@@ -56,6 +56,7 @@ Re-read on every poll, so edits apply without a restart. See [`config.example.to
 ## Things to know
 
 - Telemetry is **event-driven**: the car pushes an update only when a value changes (battery about every 2-6 minutes while charging). A poll sees only the latest event, so a shorter interval captures more of them.
+- **Trips** are the car's driving windows (from usage-mode events) with the distance taken from the odometer at the start and end, because the car reports the odometer only at those two moments and no position while driving.
 - Energy figures are **estimates**: trips use SoC change x `BATTERY_KWH`; charge sessions use reported power over time. This car's API does not expose energy counters.
 - History starts at the first poll; there is no backfill.
 - The dashboard has **no authentication** and shows your location. Keep it on localhost or a private network (Tailscale).

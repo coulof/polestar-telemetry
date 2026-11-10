@@ -143,3 +143,52 @@ def test_session_started_before_tracking_is_partial():
     assert observed_start["partial"].tolist() == [False]
     after_gap = derive.charge_sessions(bat([0, 600], [50, 60], [idle, ch], [0, 4000]))  # 10 h of silence
     assert after_gap["partial"].tolist() == [True]
+
+
+def avail(minutes, modes):
+    return pd.DataFrame({"time": ts(*minutes), "usageMode": modes})
+
+
+DRIVE, STOP = "USAGE_MODE_DRIVING", "USAGE_MODE_INACTIVE"
+
+
+def test_trip_from_driving_window_with_start_and_end_odometer_only(monkeypatch):
+    # What the car really sends: one odometer event at drive start, one at the end (22 min apart),
+    # the end reading arriving just before the mode change.
+    monkeypatch.setattr(derive, "BATTERY_KWH", 80)
+    o = odo([0, 21.9], [6_210_700, 6_229_100])
+    a = avail([0, 22], [DRIVE, STOP])
+    b = bat([0, 25], [80, 78])
+    t = derive.trips(o, b, availability=a)
+    assert len(t) == 1
+    assert abs(t.loc[0, "km"] - 18.4) < 1e-9 and t.loc[0, "minutes"] == 22
+    assert abs(t.loc[0, "avg_kmh"] - 18.4 / 22 * 60) < 1e-9
+    assert t.loc[0, "soc_start"] == 80 and t.loc[0, "soc_end"] == 78
+
+
+def test_short_stop_merges_legs_but_long_stop_does_not():
+    o = odo([0, 21.9, 24, 39.9, 61, 80], [100_000, 118_400, 118_400, 130_000, 130_000, 140_000])
+    merged = derive.trips(o, bat([0], [80]), availability=avail([0, 22, 24, 40], [DRIVE, STOP, DRIVE, STOP]))
+    assert len(merged) == 1 and merged.loc[0, "km"] == 30.0 and merged.loc[0, "minutes"] == 40
+    apart = derive.trips(o, bat([0], [80]), availability=avail([0, 22, 61, 81], [DRIVE, STOP, DRIVE, STOP]))
+    assert len(apart) == 2 and apart["km"].round(1).tolist() == [18.4, 10.0]
+
+
+def test_open_window_and_stationary_window_make_no_trip():
+    o = odo([0], [100_000])
+    assert derive.trips(o, bat([0], [80]), availability=avail([0], [DRIVE])).empty         # still driving
+    o2 = odo([0, 20], [100_000, 100_000])
+    assert derive.trips(o2, bat([0], [80]), availability=avail([0, 20], [DRIVE, STOP])).empty   # did not move
+
+
+def test_trips_fall_back_to_odometer_without_usage_mode():
+    o = odo([0, 5, 10], [100_000, 105_000, 110_000])
+    for a in (None, pd.DataFrame()):
+        t = derive.trips(o, bat([0], [80]), availability=a)
+        assert len(t) == 1 and t.loc[0, "km"] == 10.0
+
+
+def test_trip_soc_end_uses_last_reading_when_none_follows():
+    o = odo([0, 21.9], [100_000, 118_400])
+    t = derive.trips(o, bat([0, 20], [80, 78]), availability=avail([0, 22], [DRIVE, STOP]))   # no battery event after 22 min
+    assert t.loc[0, "soc_end"] == 78 and pd.notna(t.loc[0, "kwh"])

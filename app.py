@@ -60,6 +60,7 @@ def bar_chart(df, x, y, title, ytitle, height=300):
     fig = go.Figure(go.Bar(x=df[x], y=df[y], marker=dict(color=p["series"], cornerradius=4),
                            hovertemplate="%{x}<br>%{y:.1f} " + ytitle + "<extra></extra>"))
     fig.update_layout(yaxis_title=ytitle, bargap=0.4)
+    fig.update_xaxes(type="category")     # one label per bar; a date axis fans out with a single day
     return theme.style(fig, height, title)
 
 
@@ -267,7 +268,7 @@ if period_days:
 else:
     battery_v = battery
 
-trip_table = derive.trips(odometer, battery)
+trip_table = derive.trips(odometer, battery, availability=data["availability"])
 sessions = derive.charge_sessions(battery)
 if period_days and not trip_table.empty:
     trip_table = trip_table[trip_table["start"] >= cutoff]
