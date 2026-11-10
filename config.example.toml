@@ -1,6 +1,8 @@
 # Copy to config.toml (gitignored) and adjust. Re-read on every poll: no restart needed.
 # Override path with CONFIG_PATH; `--interval` / `--interval-active` on the collector win over this file.
 
+# timezone = "Europe/Paris"   # for time-of-use tariffs and weekly reports (default Europe/Paris)
+
 [poll]
 interval = 300          # seconds between polls when parked/idle
 interval_active = 60    # seconds while charging or driving (battery events arrive every ~2-6 min)
@@ -32,3 +34,16 @@ lat = 1.0
 lon = 1.0
 radius_m = 150
 price_per_kwh = 0.20
+# Optional time-of-use pricing: [[location.tariff]] sub-tables belong to the [[location]] just above them.
+# Within a window the tariff price replaces the location's price_per_kwh; windows may cross midnight.
+# [[location.tariff]]
+# from = "23:00"
+# to = "07:00"
+# price_per_kwh = 0.15
+#
+# Weekday-specific rate (from = to means the whole day; days are mon..sun, of the instant's local date):
+# [[location.tariff]]
+# from = "00:00"
+# to = "00:00"
+# days = ["sat", "sun"]
+# price_per_kwh = 0.169

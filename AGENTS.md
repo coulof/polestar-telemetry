@@ -26,6 +26,8 @@ Search code with `rg`. Run tests after any change to `polestar/`.
 - Energy is estimated: `BATTERY_KWH` (78) is unverified; battery energy counters are null for this car.
 - The dashboard has no auth. The compose file binds it to `BIND_ADDR` (default `127.0.0.1`).
 - Streamlit: use `width="stretch"` (not `use_container_width`).
+- Charging settings (`targetSoc`, `ampLimit`, timers) are read-only snapshots via `polestar/charging.py`. `chargeLocations` and `isAtChargeLocation` return 404 for this car; the collector skips 404s silently. Timer times are local at the stored `offsetMinutes`.
+- Time-of-use tariffs are priced per reading interval in `derive.price_sessions` (pass `battery`); it also returns `cost_cheapest` and `saving` (peak energy at the cheapest rate). The Now tab shows charging notes for exceptions only; avoid adding always-on lines to the hero card.
 - Several processes share the SQLite file; `connect()` enables WAL.
 
 ## Weekly report

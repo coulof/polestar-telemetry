@@ -83,7 +83,7 @@ def trips(odometer, battery, location=None):
 def charge_sessions(battery):
     """One row per charging session (consecutive charging readings)."""
     cols = ["start", "end", "minutes", "soc_start", "soc_end", "kwh_from_soc", "kwh_from_power", "peak_kw", "type",
-            "partial"]
+            "median_amps", "partial"]
     if battery.empty or "chargingStatusV2" not in battery:
         return pd.DataFrame(columns=cols)
     b = battery.sort_values("time").reset_index(drop=True)
@@ -101,6 +101,7 @@ def charge_sessions(battery):
         kwh_power = float(((power + power.shift().fillna(power)) / 2 * hours).sum())
         soc = pd.to_numeric(g["batteryChargeLevelPercentage"], errors="coerce")
         types = g["chargingType"].dropna() if "chargingType" in g else pd.Series(dtype=str)
+        amps = pd.to_numeric(g["chargingCurrentAmps"], errors="coerce") if "chargingCurrentAmps" in g else pd.Series(dtype=float)
         rows.append({
             "start": g["time"].iloc[0],
             "end": g["time"].iloc[-1],
@@ -111,6 +112,7 @@ def charge_sessions(battery):
             "kwh_from_power": kwh_power,
             "peak_kw": power.max(),
             "type": types.mode().iloc[0].removeprefix("CHARGING_TYPE_") if not types.empty else None,
+            "median_amps": amps.median() if amps.notna().any() else None,
             "partial": partial,   # started before tracking: energy and SoC change are lower bounds
         })
     return pd.DataFrame(rows, columns=cols)
@@ -138,24 +140,61 @@ def idle_drain(battery, trip_table):
     return out.groupby("date", as_index=False)["soc_lost_pct"].sum()
 
 
-def price_sessions(sessions, location, cfg):
+def _tou_cost(readings, loc, tz):
+    """Cost of one session under time-of-use tariffs: each reading interval's energy (trapezoid of the
+    reported power) is split into one-minute steps and priced at the tariff in force at that local time."""
+    r = readings.sort_values("time")
+    t = r["time"].dt.tz_convert("UTC").tolist()
+    kw = (pd.to_numeric(r.get("chargingPowerWatts"), errors="coerce").fillna(0) / 1000).tolist()
+    cost = cheapest = 0.0
+    for i in range(len(t) - 1):
+        secs = (t[i + 1] - t[i]).total_seconds()
+        if secs <= 0:
+            continue
+        energy = (kw[i] + kw[i + 1]) / 2 * secs / 3600
+        steps = max(1, int(-(-secs // 60)))
+        for k in range(steps):
+            mid = (t[i] + pd.Timedelta(seconds=secs * (k + 0.5) / steps)).tz_convert(tz)
+            cost += energy / steps * config.price_at(loc, mid)
+            cheapest += energy / steps * config.cheapest_price(loc, mid)
+    return cost, cheapest
+
+
+def price_sessions(sessions, location, cfg, battery=None):
     """Add location, price_per_kwh and cost (EUR) to charge sessions.
 
-    The car is assumed to be where it last reported a position before the session started."""
+    The car is assumed to be where it last reported a position before the session started. A location
+    with [[location.tariff]] windows is priced per reading interval (needs `battery`); price_per_kwh is
+    then the effective average."""
     out = sessions.copy()
-    names, prices = [], []
     lat_col, lon_col = "coordinate.latitude", "coordinate.longitude"
     if len(out) and not location.empty and lat_col in location:
         pos = _asof(location, out["start"], [lat_col, lon_col], tolerance=None)
-        matches = [config.match_location(cfg, la, lo) for la, lo in zip(pos[lat_col], pos[lon_col])]
+        locs = [config.match(cfg, la, lo) for la, lo in zip(pos[lat_col], pos[lon_col])]
     else:
-        matches = [config.match_location(cfg, None, None)] * len(out)
-    for name, price in matches:
+        locs = [None] * len(out)
+    tz = cfg.get("timezone", "Europe/Paris")
+    names, prices, costs, cheapest_costs = [], [], [], []
+    for (_, sess), loc in zip(out.iterrows(), locs):
+        name = loc["name"] if loc else None
+        price = loc["price_per_kwh"] if loc else cfg["default_price"]
+        cost = sess["kwh_from_power"] * price if price is not None else float("nan")
+        cheapest = cost          # no tariff windows: nothing cheaper to compare with
+        if loc and loc.get("tariff") and battery is not None and not battery.empty:
+            window = battery[(battery["time"] >= sess["start"]) & (battery["time"] <= sess["end"])]
+            if len(window) > 1:
+                cost, cheapest = _tou_cost(window, loc, tz)
+                price = cost / sess["kwh_from_power"] if sess["kwh_from_power"] else price
         names.append(name)
         prices.append(price)
+        costs.append(cost)
+        cheapest_costs.append(cheapest)
     out["location"] = names
     out["price_per_kwh"] = pd.to_numeric(pd.Series(prices, index=out.index), errors="coerce")
-    out["cost"] = out["kwh_from_power"] * out["price_per_kwh"]
+    out["cost"] = pd.Series(costs, index=out.index, dtype=float)
+    # what the same energy would have cost at the location's cheapest rate (moving it all off-peak)
+    out["cost_cheapest"] = pd.Series(cheapest_costs, index=out.index, dtype=float)
+    out["saving"] = out["cost"] - out["cost_cheapest"]
     return out
 
 

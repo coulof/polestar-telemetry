@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from . import config, derive, insights
+from . import charging, config, derive, insights
 from .collect import DB_PATH
 
 
@@ -65,6 +65,7 @@ def _charging(sessions):
         "by_location": by_loc,
         "types": sessions["type"].dropna().value_counts().to_dict(),
         "partial_sessions": int(sessions["partial"].sum()),
+        "potential_saving_eur": _num(sessions["saving"].sum(min_count=1), 2),   # peak energy at the cheapest rate
     }
 
 
@@ -80,7 +81,7 @@ def weekly(db, wid, now=None):
     location, availability = derive.load(db, "location"), derive.load(db, "availability")
     health, pre = derive.load(db, "health"), derive.load(db, "preCleaning")
     trips = derive.trips(odometer, battery)
-    sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg)
+    sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg, battery)
 
     def window(a, b):
         return _in(trips, "start", a, b, tz), _in(sessions, "start", a, b, tz)
@@ -109,12 +110,20 @@ def weekly(db, wid, now=None):
         notes.append("Some charge sessions began before tracking started; their energy is a lower bound.")
     notes.append("Energy figures are estimates (battery capacity assumed, charger-side power).")
 
+    ch = _charging(s)
+    amp = charging.amp_limit(charging.latest_payload(db, "ampLimit"))
+    amps = pd.Series(dtype=float)
+    if not batt_w.empty and "chargingCurrentAmps" in batt_w and "chargingStatusV2" in batt_w:
+        on = batt_w["chargingStatusV2"].isin(derive.CHARGING_STATES)
+        amps = pd.to_numeric(batt_w.loc[on, "chargingCurrentAmps"], errors="coerce").dropna()
+    ch["amp_limit_in_car_a"] = _num(amp, 0)
+    ch["median_charging_current_a"] = _num(amps.median(), 0) if len(amps) else None
     return {
         "week": wid,
         "period": {"start": str(start.date()), "end": str((end - pd.Timedelta(days=1)).date())},
         "driving": _driving(t),
         "previous_week_driving": _driving(pt),
-        "charging": _charging(s),
+        "charging": ch,
         "previous_week_charging": {"sessions": int(len(ps)), "kwh": _num(ps["kwh_from_power"].sum()) if len(ps) else 0.0,
                                    "cost_eur": _num(ps["cost"].sum(min_count=1), 2) if len(ps) else None},
         "battery": {

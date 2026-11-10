@@ -39,15 +39,15 @@ Optional: `DB_PATH` (default `data/telemetry.db`), `CONFIG_PATH` (default `confi
 Re-read on every poll, so edits apply without a restart. See [`config.example.toml`](config.example.toml).
 
 - `[poll] interval` / `interval_active`: seconds between polls when idle / while charging or driving (defaults 300 / 60). Command-line flags `--interval` and `--interval-active` take precedence.
-- `[[location]]`: name, lat, lon, `radius_m`, `price_per_kwh`. A charge session is priced by the position the car last reported before it started. `[pricing] default_price_per_kwh` covers unlisted places; unset means cost unknown.
+- `[[location]]`: name, lat, lon, `radius_m`, `price_per_kwh`. A charge session is priced by the position the car last reported before it started. Optional `[[location.tariff]]` sub-tables (`from`, `to`, `price_per_kwh`, optional `days`; windows may cross midnight, `from` = `to` means all day) give time-of-use pricing, applied per reading interval. Top-level `timezone` sets the clock for tariffs and weeks. `[pricing] default_price_per_kwh` covers unlisted places; unset means cost unknown.
 - `[report]` `timezone` (weeks run Monday to Sunday) and `model` (Claude Code model alias). `[service]` `warn_days` / `warn_km`: when the service-due warning appears. `[co2] g_per_kwh`: grid carbon intensity, enables CO2 figures in Insights.
 
 ## What the dashboard shows
 
-- **Now:** charge, range, charging state and power, lock/open icons, service due, last position.
+- **Now:** charge gauge with low/high zones, range, charging power, energy and cost so far, lock/open and service badges, last position. Charging notes appear only for exceptions: plugged in but not charging, a charger fault, or charging at a peak rate while a cheaper window is coming.
 - **Report:** a weekly "hot takes" summary written by Claude from the week's aggregated stats, with the numbers behind it.
 - **Trips:** distance per day, estimated consumption (kWh/100 km), table.
-- **Charging:** sessions, power curve, energy, cost by location.
+- **Charging:** sessions, power curve, energy, cost by location, "could have saved" (energy charged at peak rates priced at the cheapest rate, needs time-of-use tariffs), a warning when sessions run below the car's amp limit, and the car's charging settings (target charge, amp limit, timers; read-only).
 - **Battery:** state of charge over time, SoC lost while parked.
 - **Insights:** real-world range, energy per full charge, cost per 100 km, optional CO2, a driving/charging/parked timeline and a monthly table.
 - **Air:** cabin air quality index and PM2.5 over time, daily summary, pre-cleaning cycles (the API documents neither the index scale nor the PM2.5 unit).
@@ -94,6 +94,7 @@ If a run fails (for example the CLI login expired) the Report tab keeps showing 
 | `polestar/derive.py` | Trips, charge sessions, parked drain, pricing, air quality |
 | `polestar/stats.py` | Weekly aggregates (no VIN or coordinates) |
 | `polestar/report.py` | Weekly report: prompt, storage, `claude -p` call |
+| `polestar/charging.py` | Car charging settings, plug-state and amp-limit exception checks |
 | `polestar/insights.py` | Real-world range, capacity trend, monthly costs, state timeline |
 | `app.py` | Streamlit dashboard |
 | `smoke.py` | Credential / endpoint check |
@@ -101,11 +102,7 @@ If a run fails (for example the CLI login expired) the Report tab keeps showing 
 
 ## Roadmap
 
-1. **Charging intelligence** (needs the `pdp-charging/*` scopes):
-   - "Ready by departure" check from the parking-climate timer, target SoC and charging power.
-   - List the car's saved charge locations that are not priced yet.
-   - Time-of-use pricing (e.g. off-peak window at home) priced per reading interval.
-   - Flag charging below the configured amp limit.
-2. Tests for `client.py` and `collect.py` (mocked HTTP).
-3. Import local history into the server database.
-4. Explore the `request_rvdc` records in the Polestar data export (meaning unverified).
+1. Tests for `client.py` and `collect.py` (mocked HTTP).
+2. Import local history into the server database.
+3. Explore the `request_rvdc` records in the Polestar data export (meaning unverified).
+4. Saved charge locations: the API endpoint exists, but it returns 404 for this car, so there is nothing to import yet.

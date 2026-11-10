@@ -5,12 +5,20 @@ import time
 import httpx
 from dotenv import load_dotenv
 
-DOMAINS = (
+TELEMETRY = (
     "battery", "odometer", "location", "availability",
     "exterior", "health", "parkingClimatization", "preCleaning",
 )
-SCOPES = " ".join(f"pdp-telemetry/{d}" for d in DOMAINS)
-PATHS = {"parkingClimatization": "parking-climatization", "preCleaning": "pre-cleaning"}
+CHARGING = ("targetSoc", "ampLimit", "chargeLocations", "globalChargeTimer", "parkingClimateTimer", "isAtChargeLocation")
+DOMAINS = TELEMETRY + CHARGING
+SCOPES = " ".join([f"pdp-telemetry/{d}" for d in TELEMETRY] + [f"pdp-charging/{d}" for d in CHARGING])
+# Scope names are camelCase, URL paths are kebab-case (charging ones live under /charging/)
+PATHS = {
+    "parkingClimatization": "telemetry/parking-climatization", "preCleaning": "telemetry/pre-cleaning",
+    "targetSoc": "charging/target-soc", "ampLimit": "charging/amp-limit",
+    "chargeLocations": "charging/charge-locations", "globalChargeTimer": "charging/global-charge-timer",
+    "parkingClimateTimer": "charging/parking-climate-timer", "isAtChargeLocation": "charging/is-at-charge-location",
+}
 
 
 class PolestarClient:
@@ -53,4 +61,4 @@ class PolestarClient:
         return self._get("/v1/vehicles")
 
     def telemetry(self, vin, domain):
-        return self._get(f"/v1/vehicles/{vin}/telemetry/{PATHS.get(domain, domain)}")
+        return self._get(f"/v1/vehicles/{vin}/{PATHS.get(domain, f'telemetry/{domain}')}")

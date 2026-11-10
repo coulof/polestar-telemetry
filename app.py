@@ -3,13 +3,14 @@ import json
 import os
 import re
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from polestar import config, derive, insights, report, theme
+from polestar import charging, config, derive, insights, report, theme
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
@@ -143,6 +144,32 @@ def location_map(loc, cfg, height=340):
     return theme.style(fig, height).update_layout(margin=dict(l=0, r=0, t=0, b=0))
 
 
+def fmt_daily(t):
+    return f"{int(t.get('hour') or 0):02d}:{int(t.get('minute') or 0):02d}" if t else "—"
+
+
+def charging_notes(db, b, charging_now, now, cfg, location):
+    """Exceptions only: plug trouble, or charging at a peak rate while a cheaper window is coming."""
+    notes = []
+    target = charging.target_soc(charging.latest_payload(db, "targetSoc"))
+    start = charging.next_timer_start(charging.latest_payload(db, "globalChargeTimer"), now.to_pydatetime())
+    issue = charging.plug_issue(b, target, start.astimezone(LOCAL_TZ) if start else None)
+    if issue:
+        level, text = issue
+        notes.append({"info": f":material/schedule: {text}", "warn": f":orange[:material/power_off: {text}]",
+                      "error": f":red[:material/error: {text}]"}[level])
+    if charging_now and not location.empty and "coordinate.latitude" in location:
+        loc = config.match(cfg, location.iloc[-1]["coordinate.latitude"], location.iloc[-1]["coordinate.longitude"])
+        if loc and loc.get("tariff"):
+            local = now.to_pydatetime().astimezone(ZoneInfo(cfg["timezone"]))
+            price = config.price_at(loc, local)
+            if price > config.cheapest_price(loc, local):
+                nxt = config.next_cheaper_start(loc, local)
+                later = f"; the cheaper €{config.price_at(loc, nxt):.2f} rate starts at {nxt:%H:%M}" if nxt else ""
+                notes.append(f":orange[:material/savings: Charging at the peak rate (€{price:.2f}/kWh){later}]")
+    return notes
+
+
 @st.fragment(run_every=60)
 def now_tab():
     data, _ = load_all(DB_PATH)
@@ -168,22 +195,23 @@ def now_tab():
                 st.markdown(f'<div class="pt-sub">Estimated range</div><div class="pt-big" style="margin-bottom:.6rem">{rng:.0f} km</div>',
                             unsafe_allow_html=True)
             if charging:
-                sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg)
+                sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg, battery)
                 cur = sessions.iloc[-1] if not sessions.empty else None
-                c = st.columns(4)
+                c = st.columns(3)
                 c[0].metric("Power", f"{(b.get('chargingPowerWatts') or 0) / 1000:.1f} kW",
                             str(b.get("chargingType", "")).removeprefix("CHARGING_TYPE_") or None,
                             delta_color="off", delta_arrow="off")
-                eta = b.get("estimatedChargingTimeToFullMinutes")
-                c[1].metric("To full", fmt_minutes(eta) if pd.notna(eta) else "—")
                 part = cur is not None and bool(cur["partial"])   # began before tracking: lower bound
                 note = ("Energy since the first reading we stored. Charging began before tracking started, "
                         "so the real total is higher.") if part else None
-                c[2].metric("Added", f"{cur['kwh_from_power']:.1f} kWh" if cur is not None else "—",
+                c[1].metric("Added", f"{cur['kwh_from_power']:.1f} kWh" if cur is not None else "—",
                             "since tracking began" if part else None, delta_color="off", delta_arrow="off", help=note)
                 cost = f"€{cur['cost']:.2f}" if cur is not None and pd.notna(cur["cost"]) else "—"
                 place = cur["location"] if cur is not None and isinstance(cur["location"], str) else None
-                c[3].metric("Cost", cost, place, delta_color="off", delta_arrow="off", help=note)
+                c[2].metric("Cost", cost, place, delta_color="off", delta_arrow="off", help=note)
+            if charging or b.get("chargerConnectionStatus") == "CHARGER_CONNECTION_STATUS_CONNECTED":
+                for line_note in charging_notes(connect(DB_PATH), b, charging, now, cfg, location):
+                    st.markdown(line_note)
         age = int((now - b["time"]).total_seconds() // 60)
         st.caption(f"Last battery event {b['time']:%d %b %H:%M} ({age} min ago)")
 
@@ -228,7 +256,7 @@ if period_days and not trip_table.empty:
     trip_table = trip_table[trip_table["start"] >= cutoff]
 if period_days and not sessions.empty:
     sessions = sessions[sessions["start"] >= cutoff]
-sessions = derive.price_sessions(sessions, location, config.load())
+sessions = derive.price_sessions(sessions, location, config.load(), battery)
 
 st.title("Polestar 2")
 tab_now, tab_report, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = st.tabs(
@@ -281,16 +309,27 @@ with tab_trips:
 
 # ---- charging ------------------------------------------------------------
 with tab_charge:
+    has_saving_tip = (not sessions.empty) and float(sessions['saving'].sum()) > 0.005
     if sessions.empty:
         empty("No charging sessions yet.", ":material/ev_station:")
     else:
+        cdb = connect(DB_PATH)
+        amp = charging.amp_limit(charging.latest_payload(cdb, "ampLimit"))
         c = st.columns(4)
-        c[0].metric("Sessions", len(sessions), border=True)
-        c[1].metric("Energy (from power)", f"{sessions['kwh_from_power'].sum():.0f} kWh", border=True)
-        c[2].metric("Peak power", f"{sessions['peak_kw'].max():.1f} kW", border=True)
+        c[0].metric("Energy (from power)", f"{sessions['kwh_from_power'].sum():.0f} kWh", border=True,
+                    help=f"{len(sessions)} session(s) in this period.")
+        c[1].metric("Peak power", f"{sessions['peak_kw'].max():.1f} kW", border=True)
         priced = sessions["cost"].notna()
-        c[3].metric("Cost", f"€{sessions['cost'].sum():.2f}", border=True,
+        c[2].metric("Cost", f"€{sessions['cost'].sum():.2f}", border=True,
                     help=f"{int(priced.sum())} of {len(sessions)} sessions at a priced location (config.toml)")
+        has_tariff = any(l.get("tariff") for l in config.load()["locations"])
+        c[3].metric("Could have saved", f"€{sessions['saving'].sum():.2f}" if has_tariff else "—", border=True,
+                    help="Energy charged at peak rates, priced at the cheapest rate instead. Needs time-of-use "
+                         "tariffs in config.toml; it assumes the charging could all move to the cheap window.")
+        capped = sum(charging.amp_check(amp, m) is not None for m in sessions["median_amps"].dropna())
+        if capped:
+            st.warning(f"{capped} of {len(sessions)} sessions ran below the {amp:.0f} A limit set in the car; "
+                       "the wall box, cable or grid may be capping the current.", icon=":material/speed:")
         pick = st.selectbox("Session", sessions.index[::-1],
                             format_func=lambda i: f"{sessions.loc[i, 'start']:%d %b %H:%M} · {sessions.loc[i, 'type'] or '?'}")
         s = sessions.loc[pick]
@@ -302,12 +341,37 @@ with tab_charge:
         cost = f"€{s['cost']:.2f} at €{s['price_per_kwh']:.2f}/kWh" if pd.notna(s["cost"]) else "cost unknown"
         if s["partial"]:
             st.caption(":material/info: This session began before tracking started, so energy and SoC change are lower bounds.")
+        if pd.notna(s["saving"]) and s["saving"] > 0.005:
+            st.info(f"Part of this session was at peak rates: the same energy at the cheapest rate would have cost "
+                    f"€{s['saving']:.2f} less (€{s['cost']:.2f} instead of €{s['cost_cheapest']:.2f}).",
+                    icon=":material/savings:")
         st.caption(f"SoC {s['soc_start']:.0f} → {s['soc_end']:.0f} %, "
                    f"{s['kwh_from_power']:.1f} kWh from power / {s['kwh_from_soc']:.1f} kWh from SoC. "
                    f"{place}: {cost}.")
         with st.expander("Table"):
             st.dataframe(sessions.round({"minutes": 1, "kwh_from_soc": 1, "kwh_from_power": 1, "peak_kw": 1,
-                                         "price_per_kwh": 2, "cost": 2}), hide_index=True, width="stretch")
+                                         "price_per_kwh": 2, "cost": 2, "cost_cheapest": 2, "saving": 2,
+                                         "median_amps": 0}), hide_index=True, width="stretch")
+
+    with st.expander("Car charging settings"):
+        cdb = connect(DB_PATH)
+        gt_on = ((charging.latest_payload(cdb, "globalChargeTimer") or {}).get("globalChargeTimer") or {}).get("activated")
+        tp, ap = charging.latest_payload(cdb, "targetSoc"), charging.latest_payload(cdb, "ampLimit")
+        gt = (charging.latest_payload(cdb, "globalChargeTimer") or {}).get("globalChargeTimer") or {}
+        pct = (charging.latest_payload(cdb, "parkingClimateTimer") or {}).get("parkingClimateTimers") or []
+        rows = [("Target charge", f"{charging.target_soc(tp):.0f} %" if charging.target_soc(tp) is not None else "—"),
+                ("Amp limit", f"{charging.amp_limit(ap):.0f} A" if charging.amp_limit(ap) is not None else "—"),
+                ("Charge timer", (f"{fmt_daily(gt.get('start'))} to {fmt_daily(gt.get('stop'))}, "
+                                  + ("on" if gt.get("activated") else "off")) if gt else "—")]
+        for t in pct:
+            days = ", ".join(d[:3].title() for d in t.get("weekdays") or []) or "one-off"
+            rows.append((f"Ready-by timer {int(t.get('index', 0)) + 1}",
+                         f"{fmt_daily(t.get('readyAt'))} ({days}), {'on' if t.get('activated') else 'off'}"))
+        st.dataframe(pd.DataFrame(rows, columns=["Setting", "Value"]), hide_index=True, width="stretch")
+        if has_saving_tip and not gt_on:
+            st.caption(":material/lightbulb: The car's charge timer is off, so charging starts as soon as you plug in. "
+                       "Turning it on would move charging into the cheap window.")
+        st.caption("Read from the car; this app never changes settings. Charge locations are not provided for this car.")
 
 # ---- battery -------------------------------------------------------------
 with tab_batt:

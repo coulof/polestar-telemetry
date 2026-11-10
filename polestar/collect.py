@@ -80,7 +80,8 @@ def collect_once(client, db):
             try:
                 data = client.telemetry(vin, domain)["data"]
             except httpx.HTTPStatusError as e:
-                print(f"{domain}: HTTP {e.response.status_code}")
+                if e.response.status_code != 404:   # 404 = the car has no data for this domain (e.g. charge locations)
+                    print(f"{domain}: HTTP {e.response.status_code}")
                 continue
             new[domain] = new.get(domain, 0) + store(db, vin, domain, data)
     db.commit()
