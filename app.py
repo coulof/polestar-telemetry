@@ -216,7 +216,8 @@ if period_days and not sessions.empty:
 sessions = derive.price_sessions(sessions, location, config.load())
 
 st.title("Polestar 2")
-tab_now, tab_trips, tab_charge, tab_batt, tab_data = st.tabs(["Now", "Trips", "Charging", "Battery", "Data"])
+tab_now, tab_trips, tab_charge, tab_batt, tab_air, tab_data = st.tabs(
+    ["Now", "Trips", "Charging", "Battery", "Air", "Data"])
 
 # ---- now -----------------------------------------------------------------
 with tab_now:
@@ -292,6 +293,47 @@ with tab_batt:
                             width="stretch")
             st.caption("Lower bound: readings are event-driven, so slow drain between events is attributed "
                        "to the day of the next reading.")
+
+# ---- air quality ---------------------------------------------------------
+with tab_air:
+    air = derive.air_quality(data["preCleaning"])
+    if not air.empty:
+        air["time"] = air["time"].dt.tz_convert(LOCAL_TZ)
+    air_v = air[air["time"] >= cutoff] if period_days and not air.empty else air
+    if air.empty:
+        empty("No air quality readings yet. They arrive with the car's pre-cleaning measurements.",
+              ":material/air:")
+    else:
+        last = air.iloc[-1]
+        c = st.columns(4)
+        c[0].metric("Air quality index", f"{last['aqi']:.0f}" if pd.notna(last["aqi"]) else "—", border=True,
+                    help="Cabin air quality index reported by the car. The API does not document the scale.")
+        c[1].metric("PM2.5", f"{last['pm25']:.0f}" if pd.notna(last["pm25"]) else "—", border=True,
+                    help="Particulate matter reported by the car. The API does not document the unit.")
+        if pd.notna(last["last_cycle"]):
+            ago = pd.Timestamp.now(tz=LOCAL_TZ) - last["last_cycle"]
+            c[2].metric("Last pre-cleaning", f"{ago.days} d ago" if ago.days else f"{int(ago.total_seconds() // 3600)} h ago",
+                        border=True, help=f"{last['last_cycle']:%d %b %H:%M}")
+            c[3].metric("Cycle valid", "Yes" if last["cycle_valid"] else "No", border=True)
+        st.caption(f"Last reading {last['time']:%d %b %H:%M}. {len(air)} reading(s) stored.")
+        if len(air_v) < 2:
+            empty("Trends appear once a few readings are stored (the car reports after each measurement).",
+                  ":material/hourglass_empty:")
+        else:
+            st.plotly_chart(line_chart(air_v.dropna(subset=["aqi"]), "time", "aqi", "Air quality index", "index",
+                                       mode="lines+markers", step=True), width="stretch")
+            st.plotly_chart(line_chart(air_v.dropna(subset=["pm25"]), "time", "pm25", "PM2.5", "",
+                                       mode="lines+markers", step=True), width="stretch")
+        daily = derive.air_daily(air_v, LOCAL_TZ)
+        if not daily.empty:
+            st.subheader("Daily summary")
+            st.dataframe(daily.sort_values("date", ascending=False).round(
+                {"aqi_avg": 1, "aqi_max": 0, "pm25_avg": 1, "pm25_max": 0}), hide_index=True, width="stretch")
+        cycles = derive.cleaning_cycles(air)
+        if not cycles.empty:
+            st.subheader("Pre-cleaning cycles")
+            cycles["completed"] = cycles["completed"].dt.tz_convert(LOCAL_TZ)
+            st.dataframe(cycles, hide_index=True, width="stretch")
 
 # ---- data ----------------------------------------------------------------
 with tab_data:

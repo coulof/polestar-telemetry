@@ -106,3 +106,30 @@ def test_asof_accepts_local_timezone_times():
     s = pd.DataFrame({"start": ts(500), "kwh_from_power": [1.0]})
     out = derive.price_sessions(s, loc, {**CFG, "locations": [{"name": "X", "lat": 2.0, "lon": 2.0, "radius_m": 50, "price_per_kwh": 1.0}]})
     assert out["location"].iloc[0] == "X"
+
+
+def pre(minutes, aqi, pm, cycle_s=None):
+    df = pd.DataFrame({
+        "time": ts(*minutes), "measuredAirQualityIndex": aqi, "measuredParticulateMatter25": pm,
+        "lastCycleValid": [True] * len(minutes),
+    })
+    if cycle_s is not None:
+        df["lastCycleCompleted.seconds"] = [str(s) for s in cycle_s]
+    return df
+
+
+def test_air_quality_daily_and_cycles():
+    p = pre([0, 60, 1500], [2, 4, 3], [2, 6, 5], cycle_s=[1_000_000, 1_000_000, 1_090_000])
+    a = derive.air_quality(p)
+    assert a["aqi"].tolist() == [2, 4, 3]
+    d = derive.air_daily(a)
+    assert d["readings"].tolist() == [2, 1]                  # two readings day 1, one day 2
+    assert d.loc[0, "aqi_avg"] == 3 and d.loc[0, "pm25_max"] == 6
+    c = derive.cleaning_cycles(a)
+    assert len(c) == 2 and c.loc[0, "completed"] > c.loc[1, "completed"]
+
+
+def test_air_quality_empty_and_missing_columns():
+    assert derive.air_quality(pd.DataFrame()).empty
+    assert derive.air_daily(derive.air_quality(pd.DataFrame())).empty
+    assert derive.cleaning_cycles(derive.air_quality(pd.DataFrame())).empty

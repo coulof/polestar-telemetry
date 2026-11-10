@@ -152,3 +152,51 @@ def price_sessions(sessions, location, cfg):
     out["price_per_kwh"] = pd.to_numeric(pd.Series(prices, index=out.index), errors="coerce")
     out["cost"] = out["kwh_from_power"] * out["price_per_kwh"]
     return out
+
+
+def _epoch(df, col):
+    """`<col>.seconds` (epoch, flattened by json_normalize) as UTC datetimes; NaT if absent."""
+    name = f"{col}.seconds"
+    if name not in df:
+        return pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns, UTC]")
+    return pd.to_datetime(pd.to_numeric(df[name], errors="coerce"), unit="s", utc=True).astype("datetime64[ns, UTC]")
+
+
+def air_quality(pre):
+    """Cabin air readings from `preCleaning` snapshots: time (UTC), aqi, pm25, last_cycle, cycle_valid.
+
+    The API does not document the index scale or the PM2.5 unit."""
+    cols = ["time", "aqi", "pm25", "last_cycle", "cycle_valid"]
+    if pre.empty or "measuredAirQualityIndex" not in pre:
+        return pd.DataFrame(columns=cols)
+    event = pre["time"].dt.tz_convert("UTC").astype("datetime64[ns, UTC]")
+    out = pd.DataFrame({
+        "time": _epoch(pre, "measurementDate").fillna(event),
+        "aqi": pd.to_numeric(pre["measuredAirQualityIndex"], errors="coerce"),
+        "pm25": pd.to_numeric(pre.get("measuredParticulateMatter25"), errors="coerce"),
+        "last_cycle": _epoch(pre, "lastCycleCompleted"),
+        "cycle_valid": pre.get("lastCycleValid"),
+    })
+    out = out.dropna(subset=["aqi", "pm25"], how="all").drop_duplicates("time")
+    return out.sort_values("time").reset_index(drop=True)[cols]
+
+
+def air_daily(air, tz=None):
+    """Per local day: mean/max index and PM2.5, and number of readings."""
+    cols = ["date", "aqi_avg", "aqi_max", "pm25_avg", "pm25_max", "readings"]
+    if air.empty:
+        return pd.DataFrame(columns=cols)
+    day = air["time"].dt.tz_convert(tz).dt.date if tz else air["time"].dt.date
+    g = air.assign(date=day).groupby("date")
+    out = g.agg(aqi_avg=("aqi", "mean"), aqi_max=("aqi", "max"), pm25_avg=("pm25", "mean"),
+                pm25_max=("pm25", "max"), readings=("aqi", "size")).reset_index()
+    return out[cols]
+
+
+def cleaning_cycles(air):
+    """Completed pre-cleaning cycles (distinct `lastCycleCompleted` values), newest first."""
+    if air.empty or air["last_cycle"].isna().all():
+        return pd.DataFrame(columns=["completed", "valid"])
+    c = air.dropna(subset=["last_cycle"]).groupby("last_cycle", as_index=False)["cycle_valid"].last()
+    return c.rename(columns={"last_cycle": "completed", "cycle_valid": "valid"}).sort_values(
+        "completed", ascending=False).reset_index(drop=True)
