@@ -63,13 +63,20 @@ def bar_chart(df, x, y, title, ytitle, height=300):
 
 
 def soc_gauge(soc):
+    """Half-circle SoC gauge; tinted zones below 20 % (low) and above 80 % (high), ticks at the edges."""
     p = theme.palette()
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=soc, number=dict(suffix="%", font=dict(size=44, color=p["ink"])),
-        gauge=dict(axis=dict(range=[0, 100], visible=False), bar=dict(color=p["series"], thickness=0.28),
-                   bgcolor=p["grid"], borderwidth=0),
+        gauge=dict(
+            axis=dict(range=[0, 100], tickvals=[0, 20, 80, 100], tickfont=dict(size=12, color=p["muted"]),
+                      tickcolor=p["muted"]),
+            bar=dict(color=p["series"], thickness=0.3), bgcolor="rgba(0,0,0,0)", borderwidth=0,
+            steps=[dict(range=[0, 20], color=rgba(p["low"], 0.28)),
+                   dict(range=[20, 80], color=p["grid"]),
+                   dict(range=[80, 100], color=rgba(p["high"], 0.28))],
+        ),
     ))
-    return theme.style(fig, 190).update_layout(margin=dict(l=10, r=10, t=10, b=0))
+    return theme.style(fig, 200).update_layout(margin=dict(l=30, r=36, t=10, b=0))
 
 
 def empty(msg, icon=":material/hourglass_empty:"):
@@ -146,14 +153,16 @@ def now_tab():
             st.badge(status or "Unknown", icon=":material/bolt:" if charging else ":material/battery_std:",
                      color="green" if charging else "gray")
             rng = b.get("estimatedDistanceToEmptyKm")
-            st.markdown(f'<div class="pt-big">{rng:.0f} km</div><div class="pt-sub">estimated range</div>'
-                        if pd.notna(rng) else "", unsafe_allow_html=True)
+            if pd.notna(rng):
+                st.markdown(f'<div class="pt-big">{rng:.0f} km</div><div class="pt-sub">estimated range</div>',
+                            unsafe_allow_html=True)
             if charging:
                 sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg)
                 cur = sessions.iloc[-1] if not sessions.empty else None
                 c = st.columns(4)
                 c[0].metric("Power", f"{(b.get('chargingPowerWatts') or 0) / 1000:.1f} kW",
-                            str(b.get("chargingType", "")).removeprefix("CHARGING_TYPE_") or None, delta_color="off", delta_arrow="off")
+                            str(b.get("chargingType", "")).removeprefix("CHARGING_TYPE_") or None,
+                            delta_color="off", delta_arrow="off")
                 eta = b.get("estimatedChargingTimeToFullMinutes")
                 c[1].metric("To full", fmt_minutes(eta) if pd.notna(eta) else "—")
                 c[2].metric("Added", f"{cur['kwh_from_power']:.1f} kWh" if cur is not None else "—")

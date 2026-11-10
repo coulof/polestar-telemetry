@@ -1,20 +1,31 @@
 [server]
 headless = true
+enableStaticServing = true   # serves ./static (the font) at /app/static
+
+[client]
+toolbarMode = "minimal"   # hides the Deploy button, keeps the menu
 
 [browser]
 gatherUsageStats = false
 
 [theme]
 baseRadius = "large"
+font = "Inter"   # free stand-in for Polestar's Unica77 (licensed): swap the file below + this name
+
+[[theme.fontFaces]]
+family = "Inter"
+url = "app/static/inter-latin-wght-normal.woff2"
+weight = "100 900"
+style = "normal"
 
 [theme.light]
-primaryColor = "#2a78d6"
+primaryColor = "#ED760E"
 backgroundColor = "#fcfcfb"
 secondaryBackgroundColor = "#f2f1ee"
 textColor = "#0b0b0b"
 
 [theme.dark]
-primaryColor = "#3987e5"
+primaryColor = "#FF7500"
 backgroundColor = "#1a1a19"
 secondaryBackgroundColor = "#252524"
 textColor = "#f0efec"

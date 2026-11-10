@@ -1,8 +1,11 @@
 """Shared look for the dashboard: palette, Plotly styling and CSS."""
 import streamlit as st
 
-LIGHT = {"series": "#2a78d6", "good": "#1baf7a", "ink": "#0b0b0b", "muted": "#52514e", "grid": "rgba(82,81,78,0.15)"}
-DARK = {"series": "#3987e5", "good": "#199e70", "ink": "#f0efec", "muted": "#c3c2b7", "grid": "rgba(195,194,183,0.15)"}
+# Polestar orange: RAL 2000 (#ED760E) on light surfaces, brand #FF7500 on dark.
+LIGHT = {"series": "#ED760E", "good": "#1baf7a", "ink": "#0b0b0b", "muted": "#52514e", "grid": "rgba(82,81,78,0.15)", "low": "#e34948", "high": "#eda100"}
+DARK = {"series": "#FF7500", "good": "#199e70", "ink": "#f0efec", "muted": "#c3c2b7", "grid": "rgba(195,194,183,0.15)", "low": "#e66767", "high": "#c98500"}
+
+FONT = "Inter, Helvetica Neue, Helvetica, Arial, sans-serif"  # Unica77 is Helvetica-derived
 
 CSS = """
 <style>
@@ -40,7 +43,7 @@ def style(fig, height=300, title=None, **layout):
         title=dict(text=title, font=dict(size=15, color=p["ink"]), x=0) if title else None,
         height=height, margin=dict(l=0, r=0, t=40 if title else 10, b=0), showlegend=False,
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color=p["muted"]), hoverlabel=dict(font_size=13), **layout,
+        font=dict(family=FONT, color=p["muted"]), hoverlabel=dict(font_size=13), **layout,
     )
     fig.update_xaxes(showgrid=False, linecolor=p["grid"], zeroline=False)
     fig.update_yaxes(gridcolor=p["grid"], zeroline=False)
