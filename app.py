@@ -5,10 +5,11 @@ import re
 from datetime import datetime
 
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from polestar import config, derive, theme
+from polestar import config, derive, insights, theme
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
@@ -77,6 +78,17 @@ def soc_gauge(soc):
         ),
     ))
     return theme.style(fig, 200).update_layout(margin=dict(l=30, r=36, t=10, b=0))
+
+
+def state_timeline(seg):
+    p = theme.palette()
+    colors = {"Driving": p["series"], "Charging": p["good"], "Parked": rgba(p["muted"], 0.45)}
+    fig = px.timeline(seg, x_start="start", x_end="end", y="state", color="state", color_discrete_map=colors,
+                      category_orders={"state": ["Driving", "Charging", "Parked"]})
+    fig.update_traces(marker=dict(cornerradius=4))
+    fig.update_yaxes(title=None)
+    fig.update_xaxes(title=None)
+    return theme.style(fig, 220, "Driving, charging and parked time")
 
 
 def empty(msg, icon=":material/hourglass_empty:"):
@@ -216,8 +228,8 @@ if period_days and not sessions.empty:
 sessions = derive.price_sessions(sessions, location, config.load())
 
 st.title("Polestar 2")
-tab_now, tab_trips, tab_charge, tab_batt, tab_air, tab_data = st.tabs(
-    ["Now", "Trips", "Charging", "Battery", "Air", "Data"])
+tab_now, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = st.tabs(
+    ["Now", "Trips", "Charging", "Battery", "Insights", "Air", "Data"])
 
 # ---- now -----------------------------------------------------------------
 with tab_now:
@@ -293,6 +305,47 @@ with tab_batt:
                             width="stretch")
             st.caption("Lower bound: readings are event-driven, so slow drain between events is attributed "
                        "to the day of the next reading.")
+
+# ---- insights ------------------------------------------------------------
+with tab_ins:
+    cfg_i = config.load()
+    rr = insights.real_range(trip_table)
+    cap = insights.capacity_trend(sessions)
+    month = insights.monthly(sessions, trip_table, cfg_i["co2_g_per_kwh"], LOCAL_TZ)
+    this = month.iloc[-1] if not month.empty else None
+    c = st.columns(4)
+    c[0].metric("Real-world range", f"{rr['range_100_km']:.0f} km" if rr else "—", border=True,
+                help="Km driven per % of SoC on your trips, extrapolated to 100 %. Needs trips with a SoC drop of 2 % or more.")
+    c[1].metric("Energy per full charge", f"{cap['capacity_kwh'].median():.0f} kWh" if len(cap) else "—", border=True,
+                help="Median over charge sessions that added 10 % or more, measured at the charger (includes losses, "
+                     "so above the usable battery size).")
+    cost100 = this["cost_per_100km"] if this is not None else float("nan")
+    c[2].metric("Cost per 100 km", f"€{cost100:.2f}" if pd.notna(cost100) else "—", border=True,
+                help="Latest month in the period: charging cost divided by km driven. Needs priced sessions and trips.")
+    if cfg_i["co2_g_per_kwh"] is None:
+        c[3].metric("CO2", "—", border=True, help="Set [co2] g_per_kwh in config.toml to enable.")
+    else:
+        g = this["co2_g_per_km"] if this is not None else float("nan")
+        c[3].metric("CO2", f"{g:.0f} g/km" if pd.notna(g) else "—", border=True,
+                    help=f"Charged energy x {cfg_i['co2_g_per_kwh']} g/kWh, per km driven (latest month).")
+    if len(cap):
+        st.plotly_chart(line_chart(cap, "start", "capacity_kwh", "Energy per full charge, by session", "kWh",
+                                   mode="lines+markers"), width="stretch")
+    else:
+        empty("Capacity estimates need a charge session that adds at least 10 % of SoC.", ":material/battery_charging_full:")
+    window = pd.Timestamp.now(tz=LOCAL_TZ) - pd.Timedelta(days=min(period_days or 14, 14))
+    seg = insights.state_segments(data["availability"], derive.charge_sessions(battery), pd.Timestamp.now(tz=LOCAL_TZ))
+    if not seg.empty:
+        seg = seg[seg["end"] >= window].assign(start=lambda d: d["start"].clip(lower=window))
+    if seg.empty:
+        empty("No state changes in the last 14 days.", ":material/timeline:")
+    else:
+        st.plotly_chart(state_timeline(seg), width="stretch")
+        st.caption("Parked and driving come from the car's usage-mode events; they update only when the mode changes.")
+    if not month.empty:
+        st.subheader("By month")
+        st.dataframe(month.round({"km": 0, "kwh": 1, "cost": 2, "cost_per_100km": 2, "co2_kg": 1, "co2_g_per_km": 0}),
+                     hide_index=True, width="stretch")
 
 # ---- air quality ---------------------------------------------------------
 with tab_air:

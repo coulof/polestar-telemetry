@@ -19,6 +19,7 @@ def load(path=None):
     return {
         "interval": int(poll["interval"]),
         "interval_active": int(poll["interval_active"]),
+        "co2_g_per_kwh": raw.get("co2", {}).get("g_per_kwh"),
         "service": {**SERVICE_DEFAULTS, **raw.get("service", {})},
         "default_price": raw.get("pricing", {}).get("default_price_per_kwh"),
         "locations": [
