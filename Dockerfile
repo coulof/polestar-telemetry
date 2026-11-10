@@ -10,6 +10,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY polestar ./polestar
 COPY app.py ./
+COPY .streamlit ./.streamlit
 
 RUN useradd -r -u 10001 app && mkdir /data && chown app /data
 USER app
