@@ -82,7 +82,8 @@ def trips(odometer, battery, location=None):
 
 def charge_sessions(battery):
     """One row per charging session (consecutive charging readings)."""
-    cols = ["start", "end", "minutes", "soc_start", "soc_end", "kwh_from_soc", "kwh_from_power", "peak_kw", "type"]
+    cols = ["start", "end", "minutes", "soc_start", "soc_end", "kwh_from_soc", "kwh_from_power", "peak_kw", "type",
+            "partial"]
     if battery.empty or "chargingStatusV2" not in battery:
         return pd.DataFrame(columns=cols)
     b = battery.sort_values("time").reset_index(drop=True)
@@ -92,6 +93,9 @@ def charge_sessions(battery):
     sid = (charging.ne(charging.shift()) | gap).cumsum()
     rows = []
     for _, g in b[charging].groupby(sid[charging]):
+        first = g.index[0]
+        # We only know when charging began if a non-charging reading precedes it without a long silence.
+        partial = first == 0 or bool(charging.iloc[first - 1]) or bool(gap.iloc[first])
         hours = g["time"].diff().dt.total_seconds().fillna(0) / 3600
         power = pd.to_numeric(g.get("chargingPowerWatts"), errors="coerce").fillna(0) / 1000
         kwh_power = float(((power + power.shift().fillna(power)) / 2 * hours).sum())
@@ -107,6 +111,7 @@ def charge_sessions(battery):
             "kwh_from_power": kwh_power,
             "peak_kw": power.max(),
             "type": types.mode().iloc[0].removeprefix("CHARGING_TYPE_") if not types.empty else None,
+            "partial": partial,   # started before tracking: energy and SoC change are lower bounds
         })
     return pd.DataFrame(rows, columns=cols)
 

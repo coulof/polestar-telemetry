@@ -15,6 +15,14 @@ h1 { font-weight: 650; letter-spacing: -0.01em; }
 [data-testid="stMetricValue"] { font-weight: 600; }
 .pt-big { font-size: 2.1rem; font-weight: 650; line-height: 1.1; }
 .pt-sub { opacity: .7; font-size: .9rem; }
+/* status chip pinned to the top-right corner of the hero card */
+.st-key-hero { position: relative; }
+.st-key-hero [data-testid="stElementContainer"]:has(.pt-chip) { position: absolute; top: .8rem; right: 1rem; width: auto; z-index: 2; }
+.pt-chip { display: inline-flex; align-items: center; gap: .45rem; padding: .2rem .75rem; border-radius: 999px; font-size: .85rem; font-weight: 600; }
+.pt-dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.pt-chip.on { animation: pt-pulse 2.6s ease-in-out infinite; }
+@keyframes pt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .pt-chip.on { animation: none; } }
 /* keep nested metric columns two-per-row on phones instead of one tall stack */
 @media (max-width: 640px) {
   [data-testid="stColumn"] [data-testid="stHorizontalBlock"] [data-testid="stColumn"] {
@@ -30,6 +38,16 @@ def is_dark():
         return st.context.theme.type == "dark"
     except Exception:
         return False
+
+
+def chip(text, on):
+    """HTML for the status chip: green and gently pulsing while `on`, grey otherwise."""
+    if on:
+        bg, fg = ("rgba(25,158,112,.22)", "#6fdcb2") if is_dark() else ("rgba(27,175,122,.15)", "#0b6b4a")
+    else:
+        bg, fg = ("rgba(195,194,183,.15)", "#c3c2b7") if is_dark() else ("rgba(82,81,78,.10)", "#52514e")
+    return (f'<span class="pt-chip{" on" if on else ""}" style="background:{bg};color:{fg}">'
+            f'<span class="pt-dot"></span>{text}</span>')
 
 
 def palette():

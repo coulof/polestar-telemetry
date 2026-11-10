@@ -155,18 +155,17 @@ def now_tab():
     charging = b.get("chargingStatusV2") in CHARGING_STATES
     now = pd.Timestamp.now(tz=LOCAL_TZ)
 
-    with st.container(border=True):
+    with st.container(border=True, key="hero"):
+        status = str(b.get("chargingStatusV2", "")).removeprefix("CHARGING_STATUS_V2_").replace("_", " ").capitalize()
+        st.markdown(theme.chip(status or "Unknown", charging), unsafe_allow_html=True)
         left, right = st.columns([1, 2], vertical_alignment="center")
         soc = b.get("batteryChargeLevelPercentage")
         if pd.notna(soc):
             left.plotly_chart(soc_gauge(soc), width="stretch", key="soc_gauge")
         with right:
-            status = str(b.get("chargingStatusV2", "")).removeprefix("CHARGING_STATUS_V2_").replace("_", " ").capitalize()
-            st.badge(status or "Unknown", icon=":material/bolt:" if charging else ":material/battery_std:",
-                     color="green" if charging else "gray")
             rng = b.get("estimatedDistanceToEmptyKm")
             if pd.notna(rng):
-                st.markdown(f'<div class="pt-big">{rng:.0f} km</div><div class="pt-sub">estimated range</div>',
+                st.markdown(f'<div class="pt-sub">Estimated range</div><div class="pt-big" style="margin-bottom:.6rem">{rng:.0f} km</div>',
                             unsafe_allow_html=True)
             if charging:
                 sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg)
@@ -177,10 +176,14 @@ def now_tab():
                             delta_color="off", delta_arrow="off")
                 eta = b.get("estimatedChargingTimeToFullMinutes")
                 c[1].metric("To full", fmt_minutes(eta) if pd.notna(eta) else "—")
-                c[2].metric("Added", f"{cur['kwh_from_power']:.1f} kWh" if cur is not None else "—")
+                part = cur is not None and bool(cur["partial"])   # began before tracking: lower bound
+                note = ("Energy since the first reading we stored. Charging began before tracking started, "
+                        "so the real total is higher.") if part else None
+                c[2].metric("Added", f"{cur['kwh_from_power']:.1f} kWh" if cur is not None else "—",
+                            "since tracking began" if part else None, delta_color="off", delta_arrow="off", help=note)
                 cost = f"€{cur['cost']:.2f}" if cur is not None and pd.notna(cur["cost"]) else "—"
                 place = cur["location"] if cur is not None and isinstance(cur["location"], str) else None
-                c[3].metric("Cost", cost, place, delta_color="off", delta_arrow="off")
+                c[3].metric("Cost", cost, place, delta_color="off", delta_arrow="off", help=note)
         age = int((now - b["time"]).total_seconds() // 60)
         st.caption(f"Last battery event {b['time']:%d %b %H:%M} ({age} min ago)")
 
@@ -277,6 +280,8 @@ with tab_charge:
                         width="stretch")
         place = s["location"] if isinstance(s["location"], str) else "unpriced location"
         cost = f"€{s['cost']:.2f} at €{s['price_per_kwh']:.2f}/kWh" if pd.notna(s["cost"]) else "cost unknown"
+        if s["partial"]:
+            st.caption(":material/info: This session began before tracking started, so energy and SoC change are lower bounds.")
         st.caption(f"SoC {s['soc_start']:.0f} → {s['soc_end']:.0f} %, "
                    f"{s['kwh_from_power']:.1f} kWh from power / {s['kwh_from_soc']:.1f} kWh from SoC. "
                    f"{place}: {cost}.")

@@ -133,3 +133,13 @@ def test_air_quality_empty_and_missing_columns():
     assert derive.air_quality(pd.DataFrame()).empty
     assert derive.air_daily(derive.air_quality(pd.DataFrame())).empty
     assert derive.cleaning_cycles(derive.air_quality(pd.DataFrame())).empty
+
+
+def test_session_started_before_tracking_is_partial():
+    ch, idle = "CHARGING_STATUS_V2_CHARGING", "CHARGING_STATUS_V2_IDLE"
+    first_is_charging = derive.charge_sessions(bat([0, 30], [50, 52], [ch, ch], [4000, 4000]))
+    assert first_is_charging["partial"].tolist() == [True]
+    observed_start = derive.charge_sessions(bat([0, 30, 60], [50, 50, 52], [idle, ch, ch], [0, 4000, 4000]))
+    assert observed_start["partial"].tolist() == [False]
+    after_gap = derive.charge_sessions(bat([0, 600], [50, 60], [idle, ch], [0, 4000]))  # 10 h of silence
+    assert after_gap["partial"].tolist() == [True]
