@@ -51,8 +51,12 @@ class PolestarClient:
                 f"{self.base}{path}",
                 headers={"Authorization": f"Bearer {self._auth()}", "x-client-id": self.account_id},
             )
-            if r.status_code in (502, 503) and attempt < retries - 1:
-                time.sleep(2**attempt)
+            if r.status_code == 401 and attempt < retries - 1:
+                self._token = None                      # expired or revoked early: fetch a new token and retry
+                continue
+            if r.status_code in (429, 502, 503, 504) and attempt < retries - 1:
+                wait = r.headers.get("Retry-After", "")
+                time.sleep(min(int(wait), 60) if wait.isdigit() else 2**attempt)
                 continue
             r.raise_for_status()
             return r.json()

@@ -1,5 +1,6 @@
 """Poll telemetry and store snapshots in SQLite (deduped on metaEventId)."""
 import argparse
+import hashlib
 import json
 import os
 import sqlite3
@@ -64,7 +65,8 @@ def event_ts(data):
 
 def store(db, vin, domain, data):
     """Insert a snapshot; returns True if it was new."""
-    event_id = data.get("metaEventId") or f"{event_ts(data)}"
+    # without an event id, dedupe on the content: a time-based id would insert the same payload on every poll
+    event_id = data.get("metaEventId") or hashlib.sha1(json.dumps(data, sort_keys=True).encode()).hexdigest()
     cur = db.execute(
         "INSERT OR IGNORE INTO snapshots VALUES (?,?,?,?,?,?)",
         (vin, domain, event_id, event_ts(data), data.get("metaReceivedAt"), json.dumps(data)),
@@ -73,18 +75,25 @@ def store(db, vin, domain, data):
 
 
 def collect_once(client, db):
+    """Poll every domain once. A failing domain (HTTP error, timeout) is skipped so the others still
+    get stored; whatever was fetched is committed even if a later call raises."""
     new = {}
-    for vin in client.vehicles()["data"]:
-        vin = vin if isinstance(vin, str) else vin["vin"]
-        for domain in DOMAINS:
-            try:
-                data = client.telemetry(vin, domain)["data"]
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code != 404:   # 404 = the car has no data for this domain (e.g. charge locations)
-                    print(f"{domain}: HTTP {e.response.status_code}")
-                continue
-            new[domain] = new.get(domain, 0) + store(db, vin, domain, data)
-    db.commit()
+    try:
+        for vin in client.vehicles()["data"]:
+            vin = vin if isinstance(vin, str) else vin["vin"]
+            for domain in DOMAINS:
+                try:
+                    data = client.telemetry(vin, domain)["data"]
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code != 404:   # 404 = the car has no data for this domain (e.g. charge locations)
+                        print(f"{domain}: HTTP {e.response.status_code}")
+                    continue
+                except httpx.HTTPError as e:            # timeout, connection reset: skip this domain only
+                    print(f"{domain}: {type(e).__name__}")
+                    continue
+                new[domain] = new.get(domain, 0) + store(db, vin, domain, data)
+    finally:
+        db.commit()
     return new
 
 
@@ -119,7 +128,7 @@ def main():
         stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
         try:
             print(stamp, "new rows:", collect_once(client, db), flush=True)
-        except httpx.HTTPError as e:
+        except (httpx.HTTPError, sqlite3.Error, KeyError, ValueError) as e:   # keep polling through a bad cycle
             print(stamp, "error:", type(e).__name__, flush=True)
         if args.once:
             break
