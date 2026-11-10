@@ -3,7 +3,6 @@
     uv run python demo/make_demo_db.py data/demo.db          # then: DB_PATH=data/demo.db CONFIG_PATH=demo/config.toml mise run app
 
 The last event is a charging session in progress at the office car park, ending a few minutes before now."""
-import json
 import random
 import sys
 import time

@@ -148,7 +148,6 @@ def calendar(df, key, today):
         txt[d.weekday(), w] = f"{d:%a %d %b %Y}: {v:,.{dec}f} {unit}".strip()
     xs = [pd.Timestamp(start) + dt.timedelta(days=7 * w) for w in range(weeks)]
     first = [x for x in xs if x.day <= 7]
-    p = theme.palette()
     fig = go.Figure(go.Heatmap(z=z, x=xs, y=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], text=txt, hoverinfo="text",
                                colorscale=heat_colors(key), xgap=3, ygap=3, showscale=False, zmin=0, zmax=np.nanpercentile(z, 98)))
     fig.update_yaxes(autorange="reversed", showgrid=False, tickfont=dict(size=11))
