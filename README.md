@@ -41,6 +41,16 @@ mise run test
 
 ### Credentials (`.env`, never committed)
 
+Register for API access on the [Polestar Data Portal](https://data-portal.polestar.com/) (a developer account under the EU Data Act, tied to a Polestar ID that is linked to your car; [terms](https://www.polestar.com/ie/legal/terms-conditions/data-portal)). Create a credential there. It gives you three values, which go into `.env`:
+
+| Portal value | `.env` variable |
+|---|---|
+| Client ID | `APP_ID` |
+| Client secret | `SECRET` |
+| Account ID | `ACCOUNT_ID` |
+
+`M2M_ENDPOINT` is the token URL of the API's server, `https://pc-api.polestar.com/eu-north-1/data-portal/m2m/token` (see [`api.json`](api.json)). The app asks for the read-only `pdp-telemetry/*` and `pdp-charging/*` scopes on its own, so there is nothing to select. Keep the secret out of git (`.env` is ignored) and treat it like a password. [evcc](https://docs.evcc.io/en/vehicles/polestar) documents the same three values.
+
 | Variable | Meaning |
 |---|---|
 | `M2M_ENDPOINT` | Token URL (may end in `/token`) |
@@ -195,7 +205,7 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 ## Roadmap
 
 1. Build the real month-to-month **Compare** view and the **Hero's Path** map and timeline. Mock-ups of both exist (`POLESTAR_MOCK=1`); they need a few weeks of real history. The car reports no position while driving, so a real path would be curves between parked positions.
-2. Tests for `client.py` and `collect.py` (mocked HTTP).
-3. Import local history into the server database.
-4. Explore the `request_rvdc` records in the Polestar data export (meaning unverified).
-5. Saved charge locations: the API endpoint exists but returns 404 for this car, so there is nothing to import yet.
+2. Import local history into the server database.
+3. Explore the `request_rvdc` records in the Polestar data export (meaning unverified).
+4. Saved charge locations: the API endpoint exists but returns 404 for this car, so there is nothing to import yet.
+5. A step-by-step guide to getting API access, with portal screenshots: the links and values are documented under Credentials, but the portal's own screens (registering, creating the credential, where each value is shown) are not described yet.
