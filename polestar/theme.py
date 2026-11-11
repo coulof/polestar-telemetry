@@ -25,8 +25,8 @@ h1 { font-weight: 650; }
 /* no chart toolbar (download / full screen) in the hero card: it collided with the status chip on phones */
 .st-key-hero [data-testid="stElementToolbar"] { display: none; }
 .st-key-hero [data-testid="stElementContainer"]:has(.pt-chip) { position: absolute; top: .8rem; right: 1rem; width: auto; z-index: 2; }
-.pt-chip { display: inline-flex; align-items: center; gap: .45rem; padding: .2rem .75rem; border-radius: 999px; font-size: .85rem; font-weight: 600; }
-.pt-dot { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.pt-chip { display: inline-flex; align-items: center; gap: .45rem; padding: .25rem .6rem; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
+.pt-dot { width: .5rem; height: .5rem; background: currentColor; }
 .pt-chip.on { animation: pt-pulse 2.6s ease-in-out infinite; }
 @keyframes pt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 @media (prefers-reduced-motion: reduce) { .pt-chip.on { animation: none; } }
@@ -36,9 +36,19 @@ h1 { font-weight: 650; }
     min-width: calc(50% - 1rem) !important; flex: 1 1 calc(50% - 1rem) !important;
   }
 }
+/* Sharp, flat look: square corners, hairlines instead of boxes, tracked small caps labels.
+   Bordered containers and metrics keep only a top hairline; unbordered ones have no border width, so they stay clean. */
+* { border-radius: 0 !important; }
+[data-testid="stVerticalBlock"], [data-testid="stVerticalBlockBorderWrapper"], [data-testid="stMetric"] {
+  border-left-width: 0 !important; border-right-width: 0 !important; border-bottom-width: 0 !important;
+  border-top-color: rgba(128,130,134,.4) !important; background: transparent !important; box-shadow: none !important;
+}
+[data-testid="stMetric"] { padding-left: 0 !important; padding-right: 0 !important; }
+[data-testid="stMetricLabel"], .pt-sub { text-transform: uppercase; letter-spacing: .06em; font-size: .7rem !important; }
+[data-testid="stMetricValue"] { font-size: 1.75rem; }
+[data-testid="stExpander"] details { border-left-width: 0 !important; border-right-width: 0 !important; border-bottom-width: 0 !important; border-top-color: rgba(128,130,134,.4) !important; }
 </style>
 """
-
 
 def is_dark():
     try:

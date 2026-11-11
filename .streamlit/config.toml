@@ -9,7 +9,7 @@ toolbarMode = "minimal"   # hides the Deploy button, keeps the menu
 gatherUsageStats = false
 
 [theme]
-baseRadius = "large"
+baseRadius = "none"
 font = "Inter"   # free stand-in for Polestar's Unica77 (licensed): swap the file below + this name
 
 [[theme.fontFaces]]

@@ -32,12 +32,12 @@ def synth(today):
     rng = np.random.default_rng(7)
     rows, debt = [], 0.0
     for d in pd.date_range(today - dt.timedelta(days=400), today):
-        away = (d.dayofyear // 7) % 11 == 3                     # roughly one week away every 11 weeks
+        away = (d.day_of_year // 7) % 11 == 3                     # roughly one week away every 11 weeks
         used = (not away) and rng.random() < (0.88 if d.weekday() < 5 else 0.5)
         km = max(0.0, rng.normal(40 if d.weekday() < 5 else 55, 14)) if used else 0.0
         if used and d.weekday() >= 5 and rng.random() < 0.15:
             km += rng.uniform(80, 220)                          # an occasional long weekend drive
-        cons = 15.5 * (1 + 0.25 * np.cos((d.dayofyear - 15) / 365 * 2 * np.pi))   # kWh/100 km, worse in winter
+        cons = 15.5 * (1 + 0.25 * np.cos((d.day_of_year - 15) / 365 * 2 * np.pi))   # kWh/100 km, worse in winter
         debt += km * cons / 100 / 0.9
         kwh = cost = 0.0
         if debt > 35:                                           # plug in after about half a pack
@@ -160,7 +160,7 @@ def monthly_bars(df, key, today):
     m = df.assign(month=df["date"].dt.to_period("M")).groupby("month")[key].sum().tail(13)
     top = HUES[key][1 if theme.is_dark() else 0][1]
     colors = [top if i < len(m) - 1 else rgba(top, 0.45) for i in range(len(m))]   # lighter = month in progress
-    fig = go.Figure(go.Bar(x=[f"{x:%b %y}" for x in m.index.to_timestamp()], y=m.values, marker=dict(color=colors, cornerradius=4),
+    fig = go.Figure(go.Bar(x=[f"{x:%b %y}" for x in m.index.to_timestamp()], y=m.values, marker=dict(color=colors),
                            hovertemplate="%{x}: %{y:,.0f} " + unit + "<extra></extra>"))
     fig.update_layout(bargap=0.35, yaxis_title=unit)
     return theme.style(fig, 260, f"{label} per month")

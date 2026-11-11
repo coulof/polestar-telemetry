@@ -184,7 +184,6 @@ def timeline_figure(trips, now, days=7):
     order = ["Driving"] + [n for n in PLACES if n in set(df["row"])]
     fig = px.timeline(df, x_start="start", x_end="end", y="row", color="kind", category_orders={"row": order},
                       color_discrete_map={"Stay": p["baseline"], "Driving": p["series"]})
-    fig.update_traces(marker=dict(cornerradius=4))
     fig.update_yaxes(title=None, autorange="reversed")
     fig.update_xaxes(title=None)
     return theme.style(fig, 300, "Where the car was, last 7 days").update_layout(showlegend=False)
