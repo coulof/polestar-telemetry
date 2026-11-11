@@ -219,13 +219,16 @@ def _tou_cost(readings, loc, tz):
     return cost, cheapest
 
 
-def price_sessions(sessions, location, cfg, battery=None):
+def price_sessions(sessions, location, cfg, battery=None, manual=None):
     """Add location, price_per_kwh, fee and cost (EUR) to charge sessions. cost = energy + the location's
     optional `session_fee` (fixed amount per session); price_per_kwh is the energy price only.
 
     The car is assumed to be where it last reported a position before the session started. A location
     with [[location.tariff]] windows is priced per reading interval (needs `battery`); price_per_kwh is
-    then the effective average."""
+    then the effective average.
+
+    `manual` ({start epoch seconds: total paid}, see costs.py) replaces the estimate of those sessions:
+    cost is the amount entered, there is no saving to show, and `manual` is True."""
     out = sessions.copy()
     lat_col, lon_col = "coordinate.latitude", "coordinate.longitude"
     if len(out) and not location.empty and lat_col in location:
@@ -260,6 +263,16 @@ def price_sessions(sessions, location, cfg, battery=None):
     # what the same energy would have cost at the location's cheapest rate (moving it all off-peak)
     out["cost_cheapest"] = pd.Series(cheapest_costs, index=out.index, dtype=float)
     out["saving"] = out["cost"] - out["cost_cheapest"]
+    out["manual"] = False
+    if manual and len(out):
+        entered = out["start"].map(lambda t: manual.get(int(t.timestamp())))
+        hit = entered.notna()
+        out.loc[hit, "cost"] = entered[hit].astype(float)
+        out.loc[hit, "cost_cheapest"] = out.loc[hit, "cost"]
+        out.loc[hit, "saving"] = 0.0
+        out.loc[hit, "fee"] = 0.0
+        out.loc[hit, "price_per_kwh"] = out.loc[hit, "cost"] / out.loc[hit, "kwh_from_power"].where(out["kwh_from_power"] > 0)
+        out.loc[hit, "manual"] = True
     return out
 
 

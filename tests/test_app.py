@@ -6,7 +6,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from demo import make_demo_db
-from polestar import collect, derive
+from polestar import collect, costs, derive
 
 
 @pytest.fixture(scope="module")
@@ -46,3 +46,19 @@ def test_battery_capacity_is_per_session_not_a_module_global(app):
     at.sidebar.number_input(key="battery_kwh").set_value(60.0).run()
     assert not at.exception
     assert derive.BATTERY_KWH == default
+
+
+def test_cost_can_be_set_and_reset_from_the_charging_tab(app, demo_db):
+    at = app.run()
+    amount = next(n for n in at.number_input if n.label == "Total paid (€)")
+    amount.set_value(12.34).run()
+    next(b for b in at.button if b.label == "Save").click().run()
+    assert not at.exception
+    with collect.connect(demo_db) as db:
+        saved = costs.load(db)
+    assert list(saved.values()) == [12.34]
+    assert any("€12.34 (entered manually)" in c.value for c in at.caption)
+    next(b for b in at.button if b.label == "Use estimate").click().run()
+    assert not at.exception
+    with collect.connect(demo_db) as db:
+        assert costs.load(db) == {}

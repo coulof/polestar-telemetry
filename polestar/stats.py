@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from . import charging, config, derive, insights
+from . import charging, config, costs, derive, insights
 from .collect import DB_PATH
 
 
@@ -80,7 +80,7 @@ def weekly(db, wid, now=None):
     location, availability = derive.load(db, "location"), derive.load(db, "availability")
     health, pre = derive.load(db, "health"), derive.load(db, "preCleaning")
     trips = derive.trips(odometer, battery, availability=availability)
-    sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg, battery)
+    sessions = derive.price_sessions(derive.charge_sessions(battery), location, cfg, battery, manual=costs.load(db))
 
     def window(a, b):
         return _in(trips, "start", a, b, tz), _in(sessions, "start", a, b, tz)

@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from polestar import charging, config, derive, insights, report, theme
+from polestar import charging, config, costs, derive, insights, report, theme
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
@@ -18,6 +18,11 @@ st.set_page_config(page_title="Polestar telemetry", page_icon="⚡", layout="wid
 st.markdown(theme.CSS, unsafe_allow_html=True)
 
 LOCAL_TZ = ZoneInfo(config.load()["timezone"])   # not the machine's: the server container runs in UTC
+
+
+def manual_costs():
+    with closing(connect(DB_PATH)) as db:
+        return costs.load(db)
 
 
 def battery_kwh():
@@ -65,7 +70,8 @@ def now_tab():
                 st.markdown(f'<div class="pt-sub">Estimated range</div><div class="pt-big" style="margin-bottom:.6rem">{rng:.0f} km</div>',
                             unsafe_allow_html=True)
             if charging:
-                sessions = derive.price_sessions(derive.charge_sessions(battery, battery_kwh()), location, cfg, battery)
+                sessions = derive.price_sessions(derive.charge_sessions(battery, battery_kwh()), location, cfg, battery,
+                                                 manual=manual_costs())
                 cur = sessions.iloc[-1] if not sessions.empty else None
                 c = st.columns(3)
                 c[0].metric("Power", f"{(b.get('chargingPowerWatts') or 0) / 1000:.1f} kW",
@@ -139,7 +145,7 @@ if period_days and not trip_table.empty:
     trip_table = trip_table[trip_table["start"] >= cutoff]
 if period_days and not sessions.empty:
     sessions = sessions[sessions["start"] >= cutoff]
-sessions = derive.price_sessions(sessions, location, config.load(), battery)
+sessions = derive.price_sessions(sessions, location, config.load(), battery, manual=manual_costs())
 
 MOCK = os.environ.get("POLESTAR_MOCK") == "1"   # design mock-up on synthetic data, never on the server
 tabs = st.tabs(["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
@@ -211,7 +217,7 @@ with tab_charge:
         c[2].metric("Cost", f"€{sessions['cost'].sum():.2f}", border=True,
                     help=f"{int(priced.sum())} of {len(sessions)} sessions at a priced location (config.toml)")
         has_tariff = any(l.get("tariff") for l in config.load()["locations"])
-        c[3].metric("Could have saved", f"€{sessions['saving'].sum():.2f}" if has_tariff else "—", border=True,
+        c[3].metric("Missed saving", f"€{sessions['saving'].sum():.2f}" if has_tariff else "—", border=True,
                     help="Energy charged at peak rates, priced at the cheapest rate instead. Needs time-of-use "
                          "tariffs in config.toml; it assumes the charging could all move to the cheap window.")
         capped = sum(charging.amp_check(amp, m) is not None for m in sessions["median_amps"].dropna())
@@ -226,8 +232,8 @@ with tab_charge:
         st.plotly_chart(line_chart(cw, "time", "kw", "Charging power", "kW", mode="lines+markers", step=True),
                         width="stretch")
         place = s["location"] if isinstance(s["location"], str) else "unpriced location"
-        cost = ((f"€{s['cost']:.2f} at €{s['price_per_kwh']:.2f}/kWh" + (f" + €{s['fee']:.2f} session fee" if s["fee"] else ""))
-                if pd.notna(s["cost"]) else "cost unknown")
+        cost = ("cost unknown" if pd.isna(s["cost"]) else f"€{s['cost']:.2f} (entered manually)" if s["manual"]
+                else f"€{s['cost']:.2f} at €{s['price_per_kwh']:.2f}/kWh" + (f" + €{s['fee']:.2f} session fee" if s["fee"] else ""))
         if s["partial"]:
             st.caption(":material/info: This session began before tracking started, so energy and SoC change are lower bounds.")
         if pd.notna(s["saving"]) and s["saving"] > 0.005:
@@ -237,6 +243,21 @@ with tab_charge:
         st.caption(f"SoC {s['soc_start']:.0f} → {s['soc_end']:.0f} %, "
                    f"{s['kwh_from_power']:.1f} kWh from power / {s['kwh_from_soc']:.1f} kWh from SoC. "
                    f"{place}: {cost}.")
+        with st.expander("Set the cost manually", expanded=bool(s["manual"])):
+            sk = costs.key(s["start"])
+            c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
+            amount = c1.number_input("Total paid (€)", min_value=0.0, step=0.5, format="%.2f", key=f"cost_{sk}",
+                                     value=float(s["cost"]) if pd.notna(s["cost"]) else 0.0,
+                                     help="What you actually paid for this session, fees included. It replaces the estimate here and in the weekly report.")
+            if c2.button("Save", key=f"save_{sk}", width="stretch"):
+                with closing(connect(DB_PATH)) as wdb:
+                    costs.set_cost(wdb, sk, amount)
+                st.rerun()
+            if c3.button("Use estimate", key=f"reset_{sk}", width="stretch", disabled=not s["manual"]):
+                with closing(connect(DB_PATH)) as wdb:
+                    costs.clear(wdb, sk)
+                st.session_state.pop(f"cost_{sk}", None)
+                st.rerun()
         with st.expander("Table"):
             st.dataframe(sessions.round({"minutes": 1, "kwh_from_soc": 1, "kwh_from_power": 1, "peak_kw": 1,
                                          "price_per_kwh": 2, "fee": 2, "cost": 2, "cost_cheapest": 2, "saving": 2,

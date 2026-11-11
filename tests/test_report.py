@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from polestar import report, stats
+from polestar import costs, report, stats
 from polestar.collect import connect, store
 
 VIN = "TESTVIN0123456789"
@@ -61,6 +61,13 @@ def test_weekly_stats_contents_and_privacy(db):
     assert s["previous_week_driving"]["trips"] == 0
     blob = json.dumps(s)
     assert VIN not in blob and "latitude" not in blob and "3.5678" not in blob and "50.1234" not in blob
+
+
+def test_weekly_stats_use_a_manual_cost(db):
+    assert stats.weekly(db, "2026-W20")["charging"]["cost_eur"] is None          # no price configured: unknown
+    costs.set_cost(db, int(epoch(13, 23)), 6.4)
+    s = stats.weekly(db, "2026-W20")["charging"]
+    assert s["cost_eur"] == 6.4 and s["potential_saving_eur"] == 0
 
 
 def test_report_store_roundtrip(db):

@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS reports (
     stats TEXT NOT NULL         -- the aggregated JSON the report was written from
 );
 
+CREATE TABLE IF NOT EXISTS session_costs (
+    start_ts INTEGER PRIMARY KEY,   -- charge session start, epoch seconds UTC
+    cost REAL NOT NULL,             -- total paid in EUR (energy and fees), replaces the estimate
+    updated_at TEXT NOT NULL
+);
+
 CREATE VIEW IF NOT EXISTS readings AS
 SELECT b.vin, b.ts,
        json_extract(b.payload, '$.batteryChargeLevelPercentage') AS soc_pct,
