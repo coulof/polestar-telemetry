@@ -16,5 +16,6 @@ s = sqlite3.connect('/data/telemetry.db'); d = sqlite3.connect('/tmp/backup.db')
 podman cp "$C:/tmp/backup.db" "$out"
 podman exec "$C" rm -f /tmp/backup.db
 gzip -f "$out"
+chmod 600 "$out.gz"        # podman cp keeps the container file mode, so set it explicitly
 ls -1t "$DEST"/telemetry-*.db.gz | tail -n +"$((KEEP + 1))" | xargs -r rm --
 echo "backup written: $out.gz ($(ls -1 "$DEST"/telemetry-*.db.gz | wc -l) kept)"
