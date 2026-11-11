@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS reports (
     stats TEXT NOT NULL         -- the aggregated JSON the report was written from
 );
 
+CREATE TABLE IF NOT EXISTS report_failures (
+    week TEXT PRIMARY KEY,          -- ISO week whose report could not be written
+    failed_at TEXT NOT NULL,
+    error TEXT NOT NULL             -- which step failed, never data
+);
+
 CREATE TABLE IF NOT EXISTS session_costs (
     start_ts INTEGER PRIMARY KEY,   -- charge session start, epoch seconds UTC
     cost REAL NOT NULL,             -- total paid in EUR (energy and fees), replaces the estimate

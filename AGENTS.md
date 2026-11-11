@@ -72,7 +72,7 @@ Polestar look, kept calm and uncluttered: one strong accent on a neutral base, t
 
 ## Weekly report
 
-`polestar/stats.py` builds the aggregates (never include the VIN or coordinates; a test enforces it). `polestar/report.py` builds the prompt, calls `claude -p` with no tools, skills or MCP from a neutral directory, and stores the result in `reports`. The container has no CLI, so on the server `deploy/weekly-report.sh` runs on the host (a systemd timer, Mondays 08:15) and uses `podman exec` for the stats and storage steps. Failures leave the previous report in place.
+`polestar/stats.py` builds the aggregates (never include the VIN or coordinates; a test enforces it). `polestar/report.py` builds the prompt, calls `claude -p` with no tools, skills or MCP from a neutral directory, and stores the result in `reports`. The container has no CLI, so on the server `deploy/weekly-report.sh` runs on the host (a systemd timer, Mondays 08:15) and uses `podman exec` for the stats and storage steps. Failures leave the previous report in place, are recorded in `report_failures` (shown as a warning on the Report tab until that week has a report) and go through `deploy/notify.sh` (stderr, plus a POST to `NOTIFY_URL` when set). New host scripts should source `notify.sh` and call `notify` on failure; keep messages free of data. `tests/test_scripts.py` runs the scripts against fake `podman`, `claude` and `curl`.
 
 ## Deployment (same machine)
 

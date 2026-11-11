@@ -158,7 +158,14 @@ deploy/weekly-report.sh [ISO-WEEK]    # run it now; FORCE=1 replaces an existing
 mise run report                       # or locally, against the local database
 ```
 
-If a run fails (for example the CLI login expired) the Report tab keeps showing the previous report. The cause is in `journalctl --user -u polestar-report`.
+If a run fails (for example the CLI login expired) the Report tab keeps showing the previous report and adds a warning with the failed step, until a report for that week is stored. The same warning goes to the journal (`journalctl --user -u polestar-report`) and, if you set `NOTIFY_URL`, to your phone: the scripts POST the message to that URL in the [ntfy](https://ntfy.sh) style (title in a header, message as the body). The message holds only the step and exit code, never data. The nightly backup uses the same channel. Set it on the timers' services, for example with a private topic name:
+
+```sh
+systemctl --user edit polestar-report    # add:  [Service]  Environment=NOTIFY_URL=https://ntfy.sh/<your-secret-topic>
+systemctl --user edit polestar-backup
+```
+
+With ntfy.sh the topic name is the only secret, so pick a long random one; your own ntfy server works the same way.
 
 ### Troubleshooting
 

@@ -55,7 +55,22 @@ def store(db, week, markdown, week_stats, model):
         (week, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), model, markdown.strip(),
          json.dumps(week_stats)),
     )
+    db.execute("DELETE FROM report_failures WHERE week = ?", (week,))     # a stored report ends the failure
     db.commit()
+
+
+def record_failure(db, week, error):
+    """Remember that the report for `week` could not be written (shown on the Report tab)."""
+    db.execute("INSERT OR REPLACE INTO report_failures (week, failed_at, error) VALUES (?,?,?)",
+               (week, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), error.strip()[:300]))
+    db.commit()
+
+
+def latest_failure(db):
+    """The newest failure whose week still has no report, as {week, failed_at, error}, else None."""
+    row = db.execute("SELECT week, failed_at, error FROM report_failures "
+                     "WHERE week NOT IN (SELECT week FROM reports) ORDER BY failed_at DESC LIMIT 1").fetchone()
+    return dict(zip(("week", "failed_at", "error"), row)) if row else None
 
 
 def list_weeks(db):
@@ -100,6 +115,7 @@ def main():
     g.add_argument("--exists", metavar="WEEK", help="exit 0 if a report for WEEK is stored, else 1")
     g.add_argument("--prompt", metavar="WEEK", help="print the prompt (stats included) for WEEK")
     g.add_argument("--store", metavar="WEEK", help="store markdown read from stdin as WEEK's report")
+    g.add_argument("--failed", metavar="WEEK", help="record the failure reason read from stdin for WEEK")
     g.add_argument("--generate", action="store_true", help="generate with the local claude CLI")
     ap.add_argument("--week", help="with --generate: ISO week (default: last full week)")
     ap.add_argument("--model", help="model alias for the CLI (default: [report] model in config.toml)")
@@ -113,6 +129,9 @@ def main():
         sys.exit(0 if exists(db, args.exists) else 1)
     elif args.prompt:
         print(build_prompt(stats.weekly(db, args.prompt)))
+    elif args.failed:
+        record_failure(db, args.failed, sys.stdin.read() or "unknown error")
+        print(f"recorded failure for {args.failed}")
     elif args.store:
         markdown = sys.stdin.read()
         if not markdown.strip():

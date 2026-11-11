@@ -160,6 +160,11 @@ with tab_now:
 with tab_report:
     rdb = connect(DB_PATH)
     weeks = report.list_weeks(rdb)
+    failure = report.latest_failure(rdb)
+    if failure:
+        st.warning(f"The weekly report for {failure['week']} could not be written: {failure['error']} "
+                   f"({failure['failed_at'][:16].replace('T', ' ')} UTC)." + (" The report below is the previous one." if weeks else ""),
+                   icon=":material/error:")
     if not weeks:
         empty("No weekly report yet. A timer on the server writes one every Monday morning; "
               "run `deploy/weekly-report.sh` there (or `mise run report` locally) to create the first.",

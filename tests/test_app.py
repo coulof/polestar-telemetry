@@ -6,7 +6,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from demo import make_demo_db
-from polestar import admin, collect, costs, derive
+from polestar import admin, collect, costs, derive, report
 
 
 @pytest.fixture(scope="module")
@@ -92,3 +92,16 @@ def test_cost_can_be_set_and_reset_once_unlocked(app, demo_db):
         assert costs.load(db) == {}
     next(b for b in at.button if b.label == "Lock").click().run()
     assert [b for b in at.button if b.label == "Unlock"] and not [b for b in at.button if b.label == "Save"]
+
+
+def test_report_tab_warns_about_a_failed_weekly_report(app, demo_db):
+    with collect.connect(demo_db) as db:
+        report.record_failure(db, "2026-W99", "failed while asking Claude (exit 1)")
+    try:
+        at = app.run()
+        assert not at.exception
+        assert any("2026-W99" in w.value and "failed while asking Claude" in w.value for w in at.warning)
+    finally:
+        with collect.connect(demo_db) as db:
+            db.execute("DELETE FROM report_failures")
+            db.commit()

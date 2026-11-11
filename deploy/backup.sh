@@ -3,10 +3,12 @@
 # Uses SQLite's online backup (safe while the collector writes), gzips it and keeps the newest KEEP copies.
 # The copies contain the VIN and positions: the folder is 700 and the files 600. Usage: backup.sh [DEST_DIR]
 set -euo pipefail
+. "$(dirname "$0")/notify.sh"
 C="${COLLECTOR:-polestar-telemetry_collector_1}"
 DEST="${1:-${BACKUP_DIR:-$HOME/polestar-backups}}"
 KEEP="${KEEP:-14}"
 
+trap 'notify "Polestar backup failed" "the nightly database backup failed (exit $?)"' ERR
 umask 077
 mkdir -p "$DEST"
 out="$DEST/telemetry-$(date +%Y%m%d-%H%M).db"

@@ -70,6 +70,32 @@ def test_weekly_stats_use_a_manual_cost(db):
     assert s["cost_eur"] == 6.4 and s["potential_saving_eur"] == 0
 
 
+def test_failure_is_recorded_shown_until_a_report_exists_and_then_cleared(db):
+    assert report.latest_failure(db) is None
+    report.record_failure(db, "2026-W21", "failed while asking Claude (exit 1)")
+    report.record_failure(db, "2026-W21", "failed while storing the report (exit 1)")     # a later run replaces it
+    got = report.latest_failure(db)
+    assert got["week"] == "2026-W21" and "storing" in got["error"] and got["failed_at"].endswith("+00:00")
+    report.store(db, "2026-W21", "## ok", {"week": "2026-W21"}, "sonnet")
+    assert report.latest_failure(db) is None
+    assert db.execute("SELECT COUNT(*) FROM report_failures").fetchone()[0] == 0
+
+
+def test_failure_text_is_truncated(db):
+    report.record_failure(db, "2026-W21", "x" * 1000)
+    assert len(report.latest_failure(db)["error"]) == 300
+
+
+def test_cli_failed_reads_the_reason_from_stdin(db, tmp_path, monkeypatch):
+    import io
+    import sys
+    monkeypatch.setattr(report, "DB_PATH", str(tmp_path / "t.db"))
+    monkeypatch.setattr(sys, "argv", ["report", "--failed", "2026-W22"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO("failed while asking Claude (exit 1)"))
+    report.main()
+    assert report.latest_failure(db)["week"] == "2026-W22"
+
+
 def test_report_store_roundtrip(db):
     assert not report.exists(db, "2026-W20")
     report.store(db, "2026-W20", "## Hi\n- a\n", {"week": "2026-W20"}, "sonnet")
