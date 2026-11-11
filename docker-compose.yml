@@ -15,6 +15,7 @@ services:
       - ./config.toml:/app/config.toml:ro,z
     environment:
       BATTERY_KWH: ${BATTERY_KWH:-78}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}   # from .env; unset = editing off
     # The dashboard has no authentication: bind to the Tailscale IP only.
     ports:
       - "${BIND_ADDR:-127.0.0.1}:8501:8501"

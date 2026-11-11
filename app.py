@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from polestar import charging, config, costs, derive, insights, report, theme
+from polestar import admin, charging, config, costs, derive, insights, report, theme
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
@@ -244,20 +244,35 @@ with tab_charge:
                    f"{s['kwh_from_power']:.1f} kWh from power / {s['kwh_from_soc']:.1f} kWh from SoC. "
                    f"{place}: {cost}.")
         with st.expander("Set the cost manually", expanded=bool(s["manual"])):
-            sk = costs.key(s["start"])
-            c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
-            amount = c1.number_input("Total paid (€)", min_value=0.0, step=0.5, format="%.2f", key=f"cost_{sk}",
-                                     value=float(s["cost"]) if pd.notna(s["cost"]) else 0.0,
-                                     help="What you actually paid for this session, fees included. It replaces the estimate here and in the weekly report.")
-            if c2.button("Save", key=f"save_{sk}", width="stretch"):
-                with closing(connect(DB_PATH)) as wdb:
-                    costs.set_cost(wdb, sk, amount)
-                st.rerun()
-            if c3.button("Use estimate", key=f"reset_{sk}", width="stretch", disabled=not s["manual"]):
-                with closing(connect(DB_PATH)) as wdb:
-                    costs.clear(wdb, sk)
-                st.session_state.pop(f"cost_{sk}", None)
-                st.rerun()
+            if not admin.configured():
+                st.caption(":material/lock: Editing is off. Set `ADMIN_PASSWORD` in `.env` and restart to enable it.")
+            elif not admin.unlocked(st.session_state):
+                with st.form("admin_unlock", clear_on_submit=True, border=False):
+                    pw = st.text_input("Admin password", type="password")
+                    if st.form_submit_button("Unlock"):
+                        problem = admin.unlock(st.session_state, pw)
+                        if problem:
+                            st.error(problem)
+                        else:
+                            st.rerun()
+            else:
+                sk = costs.key(s["start"])
+                c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
+                amount = c1.number_input("Total paid (€)", min_value=0.0, step=0.5, format="%.2f", key=f"cost_{sk}",
+                                         value=float(s["cost"]) if pd.notna(s["cost"]) else 0.0,
+                                         help="What you actually paid for this session, fees included. It replaces the estimate here and in the weekly report.")
+                if c2.button("Save", key=f"save_{sk}", width="stretch") and admin.unlocked(st.session_state):
+                    with closing(connect(DB_PATH)) as wdb:
+                        costs.set_cost(wdb, sk, amount)
+                    st.rerun()
+                if c3.button("Use estimate", key=f"reset_{sk}", width="stretch", disabled=not s["manual"]) and admin.unlocked(st.session_state):
+                    with closing(connect(DB_PATH)) as wdb:
+                        costs.clear(wdb, sk)
+                    st.session_state.pop(f"cost_{sk}", None)
+                    st.rerun()
+                if st.button("Lock", key="admin_lock", type="tertiary"):
+                    admin.lock(st.session_state)
+                    st.rerun()
         with st.expander("Table"):
             st.dataframe(sessions.round({"minutes": 1, "kwh_from_soc": 1, "kwh_from_power": 1, "peak_kw": 1,
                                          "price_per_kwh": 2, "fee": 2, "cost": 2, "cost_cheapest": 2, "saving": 2,

@@ -6,7 +6,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from demo import make_demo_db
-from polestar import collect, costs, derive
+from polestar import admin, collect, costs, derive
 
 
 @pytest.fixture(scope="module")
@@ -24,6 +24,8 @@ def app(demo_db, monkeypatch):
     monkeypatch.setattr(collect, "DB_PATH", demo_db)
     monkeypatch.setenv("CONFIG_PATH", str(Path(__file__).parent.parent / "demo" / "config.toml"))
     monkeypatch.delenv("POLESTAR_MOCK", raising=False)
+    monkeypatch.setenv("ADMIN_PASSWORD", "s3cret")
+    admin._fails.clear()
     return AppTest.from_file(str(Path(__file__).parent.parent / "app.py"), default_timeout=120)
 
 
@@ -48,8 +50,34 @@ def test_battery_capacity_is_per_session_not_a_module_global(app):
     assert derive.BATTERY_KWH == default
 
 
-def test_cost_can_be_set_and_reset_from_the_charging_tab(app, demo_db):
+def unlock(at, password="s3cret"):
+    next(t for t in at.text_input if t.label == "Admin password").set_value(password)
+    next(b for b in at.button if b.label == "Unlock").click()
+    return at.run()
+
+
+def test_cost_editing_needs_the_admin_password(app, demo_db):
     at = app.run()
+    assert not [n for n in at.number_input if n.label == "Total paid (€)"]     # locked: no amount field, no Save
+    assert not [b for b in at.button if b.label == "Save"]
+    at = unlock(at, "wrong")
+    assert any("Wrong password." in e.value for e in at.error)
+    assert not [b for b in at.button if b.label == "Save"]
+    with collect.connect(demo_db) as db:
+        assert costs.load(db) == {}
+
+
+def test_editing_is_off_without_a_configured_password(app, monkeypatch):
+    monkeypatch.delenv("ADMIN_PASSWORD")
+    at = app.run()
+    assert not at.exception
+    assert any("Editing is off" in c.value for c in at.caption)
+    assert not [b for b in at.button if b.label in ("Save", "Unlock")]
+
+
+def test_cost_can_be_set_and_reset_once_unlocked(app, demo_db):
+    at = unlock(app.run())
+    assert not at.exception
     amount = next(n for n in at.number_input if n.label == "Total paid (€)")
     amount.set_value(12.34).run()
     next(b for b in at.button if b.label == "Save").click().run()
@@ -62,3 +90,5 @@ def test_cost_can_be_set_and_reset_from_the_charging_tab(app, demo_db):
     assert not at.exception
     with collect.connect(demo_db) as db:
         assert costs.load(db) == {}
+    next(b for b in at.button if b.label == "Lock").click().run()
+    assert [b for b in at.button if b.label == "Unlock"] and not [b for b in at.button if b.label == "Save"]
