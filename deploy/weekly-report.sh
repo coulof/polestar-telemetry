@@ -14,7 +14,8 @@ fi
 MODEL="$(podman exec "$C" python -c "from polestar import config; print(config.load()['report']['model'])")"
 PROMPT="$(podman exec "$C" python -m polestar.report --prompt "$WEEK")"
 
-cd "$(mktemp -d)"   # neutral directory: the CLI loads no project context
+WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
+cd "$WORK"   # neutral directory: the CLI loads no project context
 REPORT="$(printf '%s' "$PROMPT" | "$CLAUDE" -p --model "$MODEL" --tools "" --disable-slash-commands \
   --strict-mcp-config --no-session-persistence --output-format text)"
 [ -n "$REPORT" ] || { echo "claude returned an empty report" >&2; exit 1; }

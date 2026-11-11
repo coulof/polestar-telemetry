@@ -23,7 +23,7 @@ Polestar API --> polestar/collect.py --> data/telemetry.db --> derive / insights
                                                                                      \--> report.py --> claude -p --> Report tab
 ```
 
-Python 3.13, SQLite, Streamlit, Plotly. Runs on a laptop for development and in two containers (collector and dashboard) on a small server.
+Python 3.13 (3.11 or newer works), SQLite, Streamlit, Plotly. Runs on a laptop for development and in two containers (collector and dashboard) on a small server.
 
 ## Quick start
 
@@ -187,7 +187,8 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 
 | Path | Purpose |
 |---|---|
-| `app.py` | Streamlit dashboard |
+| `app.py` | Streamlit dashboard: sidebar, data loading and the tabs |
+| `polestar/views.py` | Plotly figures, status badges and charging notes used by the tabs |
 | `polestar/client.py` | OAuth token cache and telemetry GETs |
 | `polestar/collect.py` | Poll loop, SQLite storage deduped on `metaEventId` |
 | `polestar/config.py` | `config.toml` loading, location matching, tariffs |
@@ -198,9 +199,12 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 | `polestar/report.py` | Weekly report: prompt, storage, `claude -p` call |
 | `polestar/theme.py` | Chart styling, CSS and the status chip |
 | `polestar/mock_compare.py`, `polestar/mock_path.py` | Design mock-ups on synthetic data |
-| `deploy/` | systemd units, `update.sh`, `weekly-report.sh` |
+| `deploy/` | systemd units, `update.sh`, `weekly-report.sh`, `backup.sh` |
+| `demo/` | Synthetic database and screenshot capture for the README images |
+| `docs/img/` | README screenshots and tour |
+| `.github/workflows/ci.yml` | Lint and tests on every push |
 | `smoke.py` | Credential and endpoint check |
-| `tests/` | pytest suite |
+| `tests/` | pytest suite (no network, no real `claude`), including a headless dashboard smoke test |
 
 ## Roadmap
 

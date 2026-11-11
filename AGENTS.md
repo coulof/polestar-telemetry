@@ -13,12 +13,13 @@ client.py -> collect.py -> data/telemetry.db -> derive.py / insights.py / chargi
 
 - Snapshots are stored raw (`snapshots` table, one JSON payload per event, deduped on `metaEventId`); everything else is derived on read. A `reports` table holds the weekly reports.
 - Two long-running processes share the SQLite file (collector and dashboard); `collect.connect()` enables WAL.
-- Module map: see the Layout table in `README.md`.
+- Module map: see the Layout table in `README.md`. `app.py` loads data and lays out the tabs; figures, badges and charging notes live in `polestar/views.py`.
 
 ## Commands
 
 ```sh
 mise run setup | smoke | collect | watch | app | report | test    # uv-based, Python 3.13 via mise
+mise run deploy                                                    # local stack + weekly report timer (deploy:check, deploy:stack, deploy:claude)
 uv run pytest -q                                                   # tests
 POLESTAR_MOCK=1 mise run app                                       # design mock-up tabs
 ```
@@ -50,6 +51,7 @@ Search code with `rg`. Run the tests after any change under `polestar/` or `app.
 
 - Streamlit 1.67: use `width="stretch"`, not `use_container_width`.
 - **Now tab:** keep it glanceable. Charging notes are for exceptions only (plug problems, charging at a peak rate); do not add always-on lines to the hero card. The status chip shows Driving (gold), Charging (green) or Parked (grey) and pulses while active; it respects `prefers-reduced-motion`.
+- **Shape:** sharp and flat, in keeping with the brand: square corners everywhere (`baseRadius = "none"` in `.streamlit/config.toml`, plus `* { border-radius: 0 }` in `theme.CSS`), no card boxes (a bordered container or metric keeps only a top hairline), a square status chip, and small tracked capitals for metric labels. Do not reintroduce rounded cards, pills or rounded bars.
 - Chart toolbars are hidden on the gauge; other charts keep Plotly's defaults.
 - The sidebar **Period** selector filters Trips, Charging, Battery, Insights and Air; the Battery and Air charts also set their x-axis to the period.
 - Mock-ups: `POLESTAR_MOCK=1` adds "Compare (mock)" (`mock_compare.py`, month-to-month) and "Path (mock)" (`mock_path.py`, a map trail with a day scrubber whose camera jumps to each day's trips, a stays timeline and a places table). They use synthetic data, never read the database, and must not ship to the server. Delete the two modules and their hook at the end of `app.py` to remove them.
@@ -81,7 +83,7 @@ Host `coulof@100.64.0.1` (openSUSE Leap, Tailscale), dashboard at `http://100.64
 
 ## Verification checklist
 
-1. `uv run pytest -q` passes.
+1. `uv run pytest -q` passes (it includes a headless dashboard run on a synthetic database) and `uvx ruff check --select E9,F polestar app.py tests demo smoke.py` is clean; CI runs both.
 2. Headless check: `AppTest.from_file("app.py", default_timeout=60).run()` raises no exception (also with `DB_PATH` on a copy of real data when logic over real events changed).
-3. For visual changes, screenshot light, dark and a phone width with Playwright and the system Chrome (`uv run --with playwright python script.py`), on the Mac.
+3. For visual changes, screenshot light, dark and a phone width with Playwright (`demo/capture.py` does this on a synthetic database; see "Regenerate the README images" in `README.md`). It needs a Chrome or Chromium, so not on the server.
 4. After an update on the server: `curl http://100.64.0.1:8501/_stcore/health` returns `ok`, `podman logs --since 3m polestar-telemetry_app_1` shows no traceback, and the collector logs a poll within a minute.
