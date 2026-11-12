@@ -18,9 +18,39 @@ The [Polestar Data Portal API](api.json) only returns the **current state** of t
 
 <sub>Screenshots use a synthetic car and made-up places (see [`demo/`](demo/)); the weekly report was written by the real `claude` CLI from those synthetic figures.</sub>
 
-```
-Polestar API --> polestar/collect.py --> data/telemetry.db --> derive / insights / stats --> app.py (Streamlit)
-                                                                                     \--> report.py --> claude -p --> Report tab
+```mermaid
+flowchart LR
+    api["Polestar Data Portal API<br/>read-only GETs"]
+    subgraph host["One machine: rootless podman + systemd"]
+        direction LR
+        collector["collector<br/>polestar/collect.py"]
+        db[("SQLite (WAL)<br/>raw snapshots, reports,<br/>manual costs")]
+        derive["derive / insights /<br/>charging / stats<br/>(computed on read)"]
+        app["Streamlit dashboard<br/>app.py, port 8501"]
+        timer["systemd timers<br/>report Mon 08:15<br/>backup 03:30"]
+        claude["claude -p<br/>weekly summary"]
+        backups[("gzip backups<br/>keep 14")]
+    end
+    you(["You<br/>browser or phone"])
+
+    api --> collector --> db --> derive --> app --> you
+    timer --> claude
+    derive -- "aggregates only,<br/>no VIN or position" --> claude
+    claude -- "Report tab" --> db
+    timer --> backups
+    db -. "online backup" .-> backups
+
+    classDef accent fill:#ED760E,stroke:#ED760E,color:#000
+    classDef gold fill:#F6BE00,stroke:#F6BE00,color:#000
+    classDef grey fill:#ECECE7,stroke:#75787B,color:#000
+    classDef dark fill:#53565A,stroke:#53565A,color:#fff
+    class collector,app accent
+    class claude gold
+    class derive,timer grey
+    class db,backups dark
+    class api,you grey
+    style host fill:#FFFFFF,stroke:#B1B3B3,stroke-dasharray:4 4,color:#53565A
+    linkStyle default stroke:#75787B,stroke-width:1.5px
 ```
 
 Python 3.13 (3.11 or newer works), SQLite, Streamlit, Plotly. Runs on a laptop for development and in two containers (collector and dashboard) on a small server.
