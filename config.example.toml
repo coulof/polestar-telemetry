@@ -11,6 +11,9 @@ interval_active = 60    # seconds while charging or driving (battery events arri
 warn_days = 30     # dashboard warning when service is due within this many days...
 warn_km = 1500     # ...or this many km
 
+[alerts]
+stale_hours = 6      # deploy/freshness.sh alerts when the collector has had no data from the API for this long
+
 [co2]
 # g_per_kwh = 60    # grid carbon intensity; enables CO2 figures in the Insights tab
 

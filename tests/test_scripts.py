@@ -15,6 +15,8 @@ case "$*" in
   *--week-id*) echo 2026-W20 ;;
   *--exists*) exit 1 ;;
   *--prompt*) echo "PROMPT" ;;
+  *polestar.freshness*) echo "${FRESH_AGE:-60}" ;;
+  *"python -c"*"alerts"*) echo "${STALE_H:-6}" ;;
   *"python -c"*"enabled"*) [ "${REPORT_OFF:-}" = 1 ] && echo False || echo True ;;
   *"python -c"*"config"*) echo sonnet ;;
   *--failed*|*--store*) echo "stdin: $(cat)" >> "$LOG" ;;
@@ -92,3 +94,51 @@ def test_a_notification_never_carries_database_content(env):
 def test_backup_failure_notifies(env, tmp_path):
     r, log = env("backup.sh", str(tmp_path / "dest"), NOTIFY_URL="https://ntfy.test/topic", PODMAN_FAIL="1")
     assert r.returncode != 0 and "Polestar backup failed" in log and "https://ntfy.test/topic" in log
+
+
+HB = "https://hc.test/uuid"
+
+
+def curls(log):
+    return [line for line in log.splitlines() if line.startswith("curl")]
+
+
+def test_fresh_data_pings_the_heartbeat_and_nothing_else(env):
+    r, log = env("freshness.sh", HEARTBEAT_URL=HB, NOTIFY_URL="https://ntfy.test/topic", FRESH_AGE="600")
+    assert r.returncode == 0 and len(curls(log)) == 1 and HB in curls(log)[0] and "/fail" not in log
+
+
+def test_stale_data_notifies_once_and_signals_failure(env):
+    kw = dict(HEARTBEAT_URL=HB, NOTIFY_URL="https://ntfy.test/topic", FRESH_AGE=str(7 * 3600))
+    r, log = env("freshness.sh", **kw)
+    assert "Title: Polestar data is stale" in log and "7 h (limit 6 h)" in log and f"{HB}/fail" in log
+    r, log = env("freshness.sh", **kw)                       # still stale: the fail ping repeats, the notification does not
+    assert log.count("Title: Polestar data is stale") == 1 and log.count(f"{HB}/fail") == 2
+
+
+def test_recovery_is_announced_once(env):
+    env("freshness.sh", NOTIFY_URL="https://ntfy.test/topic", FRESH_AGE=str(7 * 3600))
+    r, log = env("freshness.sh", HEARTBEAT_URL=HB, NOTIFY_URL="https://ntfy.test/topic", FRESH_AGE="60")
+    assert "Title: Polestar data is flowing again" in log
+    r, log = env("freshness.sh", HEARTBEAT_URL=HB, NOTIFY_URL="https://ntfy.test/topic", FRESH_AGE="60")
+    assert log.count("flowing again") == 1                   # the log is cumulative: still only the first announcement
+
+
+def test_the_limit_comes_from_the_config(env):
+    r, log = env("freshness.sh", NOTIFY_URL="https://ntfy.test/topic", FRESH_AGE=str(3 * 3600), STALE_H="2")
+    assert "Polestar data is stale" in log and "(limit 2 h)" in log
+
+
+def test_unreachable_collector_counts_as_stale(env):
+    r, log = env("freshness.sh", HEARTBEAT_URL=HB, NOTIFY_URL="https://ntfy.test/topic", PODMAN_FAIL="1")
+    assert "cannot be reached" in log and f"{HB}/fail" in log
+
+
+def test_before_the_first_poll_nothing_happens(env):
+    r, log = env("freshness.sh", HEARTBEAT_URL=HB, NOTIFY_URL="https://ntfy.test/topic", FRESH_AGE="none")
+    assert r.returncode == 0 and not curls(log)
+
+
+def test_without_a_heartbeat_url_only_the_local_alert_remains(env):
+    r, log = env("freshness.sh", NOTIFY_URL="https://ntfy.test/topic", FRESH_AGE=str(9 * 3600))
+    assert "ntfy.test" in log and "hc.test" not in log

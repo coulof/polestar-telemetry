@@ -1,0 +1,11 @@
+# Install both files in ~/.config/systemd/user/, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now polestar-freshness.timer
+[Unit]
+Description=Check that the Polestar collector still gets data
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

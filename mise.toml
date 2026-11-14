@@ -27,7 +27,7 @@ description = "Run the dashboard"
 run = "uv run streamlit run app.py"
 
 [tasks.report]
-description = "Generate the weekly report locally with the claude CLI (add -- --week 2026-W46 --force)"
+description = "Development only: write a weekly report into the LOCAL database (data/telemetry.db), not the deployed stack. On a deployed stack run deploy/weekly-report.sh"
 run = "uv run python -m polestar.report --generate"
 
 [tasks.test]

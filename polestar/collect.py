@@ -47,6 +47,11 @@ CREATE TABLE IF NOT EXISTS session_costs (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS poll_status (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_ok REAL NOT NULL           -- epoch seconds of the last poll that fetched data from the API
+);
+
 CREATE VIEW IF NOT EXISTS readings AS
 SELECT b.vin, b.ts,
        json_extract(b.payload, '$.batteryChargeLevelPercentage') AS soc_pct,
@@ -90,6 +95,7 @@ def collect_once(client, db):
     """Poll every domain once. A failing domain (HTTP error, timeout) is skipped so the others still
     get stored; whatever was fetched is committed even if a later call raises."""
     new = {}
+    fetched = False
     try:
         for vin in client.vehicles()["data"]:
             vin = vin if isinstance(vin, str) else vin["vin"]
@@ -103,8 +109,12 @@ def collect_once(client, db):
                 except httpx.HTTPError as e:            # timeout, connection reset: skip this domain only
                     print(f"{domain}: {type(e).__name__}")
                     continue
+                fetched = True
                 new[domain] = new.get(domain, 0) + store(db, vin, domain, data)
     finally:
+        if fetched:   # "the API answered", not "something changed": a parked car sends no new events for hours
+            db.execute("INSERT INTO poll_status VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET last_ok = excluded.last_ok",
+                       (time.time(),))
         db.commit()
     return new
 

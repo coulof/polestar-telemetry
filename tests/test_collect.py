@@ -90,3 +90,21 @@ def test_is_active_when_charging_or_driving(db):
     assert not collect.is_active(db)
     put(db, "availability", 3, usageMode="USAGE_MODE_DRIVING")
     assert collect.is_active(db)
+
+
+def test_a_poll_that_fetches_data_records_the_time_even_when_nothing_is_new(db, monkeypatch):
+    from polestar import freshness
+    assert freshness.age_seconds(db) is None                       # before the first poll
+    monkeypatch.setattr(collect.time, "time", lambda: 5000.0)
+    collect.collect_once(FakeClient({}), db)
+    assert freshness.age_seconds(db, now=5600) == 600
+    collect.collect_once(FakeClient({}), db)                       # same events again: nothing new, still a live poll
+    assert db.execute("SELECT COUNT(*) FROM poll_status").fetchone()[0] == 1
+
+
+def test_a_poll_where_everything_fails_does_not_count_as_fresh(db):
+    from polestar import freshness
+    collect.collect_once(FakeClient({d: status_error(500) for d in DOMAINS}), db)
+    assert freshness.age_seconds(db) is None
+    collect.collect_once(FakeClient({d: status_error(404) for d in DOMAINS}), db)
+    assert freshness.age_seconds(db) is None

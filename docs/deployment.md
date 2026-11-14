@@ -41,6 +41,23 @@ By default the dashboard listens on `127.0.0.1` only (`BIND_ADDR` changes that).
 - **Setting it:** add `DASHBOARD_PASSWORD=<value>` to `.env` (keep it mode 600) without typing the value into shell history, for example `read -rsp 'Password: ' p; printf 'DASHBOARD_PASSWORD=%s\n' "$p" >> .env; unset p`, then restart the stack (`systemctl --user restart polestar-telemetry`, or `podman-compose up -d`). The same works for `ADMIN_PASSWORD`.
 - **Editing is separate:** `ADMIN_PASSWORD` still guards manual charge costs, so someone who can read cannot change them.
 
+## Stale-data alert
+
+History cannot be re-fetched, so a collector that quietly stops is the worst failure. [`deploy/freshness.sh`](../deploy/freshness.sh) runs every 15 minutes (`polestar-freshness.timer`) and asks the collector when it last got data from the API. That is the time of the last poll that fetched anything, not the newest event, because a parked car can send no new events for hours.
+
+- **Stale:** no data for longer than `[alerts] stale_hours` in `config.toml` (default 6), or the collector container cannot be reached. You get one notification (journal, plus `NOTIFY_URL` if set), and a failure ping to the heartbeat service. A "flowing again" message follows when it recovers.
+- **Fresh:** the script pings `HEARTBEAT_URL`, a [Healthchecks.io](https://healthchecks.io) check. If this whole machine stops (power, network, crash), the pings stop and Healthchecks alerts you from outside. Create a check with a period of 15 minutes and a grace time of 30 minutes, and add your email or ntfy as the alert channel.
+- **Privacy:** nothing from the database is sent, only the ping. The ping URL is a secret (anyone holding it can mark the check as up), so keep it out of git.
+
+```sh
+cp deploy/polestar-freshness.{service,timer} ~/.config/systemd/user/
+systemctl --user edit polestar-freshness    # add:  [Service]  Environment=HEARTBEAT_URL=https://hc-ping.com/<your-check-uuid>
+systemctl --user daemon-reload && systemctl --user enable --now polestar-freshness.timer
+deploy/freshness.sh                         # run it now
+```
+
+Without `HEARTBEAT_URL` you still get the local alert, but not one for the machine going down. Before the first successful poll after an upgrade the script does nothing.
+
 ## Backups
 
 History cannot be re-fetched (the API only returns the current state), so back the database up. [`deploy/backup.sh`](../deploy/backup.sh) takes an online SQLite backup from the collector container, gzips it into `~/polestar-backups` (mode 700) and keeps the newest 14 (`KEEP`, `BACKUP_DIR`). The copies contain the VIN and positions: keep them off shared storage. Nightly at 03:30:
@@ -69,8 +86,9 @@ The report is written by the Claude Code CLI (`claude -p`, your subscription log
 cp deploy/polestar-report.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now polestar-report.timer   # Mondays 08:15
 deploy/weekly-report.sh [ISO-WEEK]    # run it now; FORCE=1 replaces an existing report
-mise run report                       # or locally, against the local database
 ```
+
+**On a deployed stack, always run `deploy/weekly-report.sh`.** `mise run report` is for development: it writes into the local file `data/telemetry.db` (`DB_PATH`), which is not the database the containers use. The report is then stored, and the command prints "stored", but the dashboard never shows it, and it is written from the local database's contents, which are empty unless you ran the collector locally. The script is the only path that reads the figures from, and stores the report in, the database the dashboard reads.
 
 If a run fails (for example the CLI login expired) the Report tab keeps showing the previous report and adds a warning with the failed step, until a report for that week is stored. The same warning goes to the journal (`journalctl --user -u polestar-report`) and, if you set `NOTIFY_URL`, to your phone: the scripts POST the message to that URL in the [ntfy](https://ntfy.sh) style (title in a header, message as the body). The message holds only the step and exit code, never data. The nightly backup uses the same channel. Set it on the timers' services, for example with a private topic name:
 
@@ -85,6 +103,7 @@ With ntfy.sh the topic name is the only secret, so pick a long random one; your 
 
 - Logs: `podman logs -f polestar-telemetry_collector_1` (one line per poll with the number of new rows per domain) and `..._app_1`.
 - A domain returning 404 (saved charge locations on this car) is skipped silently, by design.
+- A report was "stored" but the Report tab does not show it: it went into the wrong database, usually from `mise run report`. Run `deploy/weekly-report.sh <week>` with `FORCE=1`.
 - Times one hour off mean `timezone` is missing from `config.toml`.
 - A new install shows an empty dashboard until the first poll has stored data (up to the poll interval, 5 minutes by default).
 - The login page says "Too many wrong attempts": five wrong passwords lock every session for a minute; wait and retry.

@@ -1,0 +1,8 @@
+# systemd *user* unit: stale-data check (see freshness.sh). Triggered by polestar-freshness.timer.
+# Set HEARTBEAT_URL (and NOTIFY_URL) with: systemctl --user edit polestar-freshness
+[Unit]
+Description=Polestar telemetry stale-data check
+
+[Service]
+Type=oneshot
+ExecStart=%h/src/polestar-telemetry/deploy/freshness.sh

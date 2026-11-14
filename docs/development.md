@@ -31,10 +31,11 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 | `polestar/stats.py` | Weekly aggregates without VIN or coordinates |
 | `polestar/report.py` | Weekly report: prompt, storage, `claude -p` call |
 | `polestar/admin.py` | Dashboard and admin passwords: sessions and lockout |
+| `polestar/freshness.py` | Age of the collector's last successful poll, for the stale-data alert |
 | `polestar/costs.py` | Manual charge costs stored per session |
 | `polestar/theme.py` | Chart styling, CSS and the status chip |
 | `polestar/mock_compare.py`, `polestar/mock_path.py` | Design mock-ups on synthetic data |
-| `deploy/` | systemd units and timers (stack, report, backup), `update.sh`, `weekly-report.sh`, `backup.sh`, `notify.sh` |
+| `deploy/` | systemd units and timers (stack, report, backup), `update.sh`, `weekly-report.sh`, `backup.sh`, `freshness.sh`, `notify.sh` |
 | `static/` | Self-hosted Inter font |
 | `demo/` | Synthetic database and screenshot capture for the README images |
 | `docs/img/` | README screenshots and tour |
