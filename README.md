@@ -18,6 +18,8 @@ The [Polestar Data Portal API](api.json) only returns the **current state** of t
 
 <sub>Screenshots use a synthetic car and made-up places (see [`demo/`](demo/)); the weekly report was written by the real `claude` CLI from those synthetic figures.</sub>
 
+How it fits together. The report step runs on the host, not in a container, because the containers have no `claude` CLI.
+
 ```mermaid
 flowchart LR
     api["Polestar Data Portal API<br/>read-only GETs"]
@@ -28,7 +30,7 @@ flowchart LR
         derive["derive / insights /<br/>charging / stats<br/>(computed on read)"]
         app["Streamlit dashboard<br/>app.py, port 8501"]
         timer["systemd timers<br/>report Mon 08:15<br/>backup 03:30"]
-        claude["claude -p<br/>weekly summary"]
+        claude["claude -p on the host<br/>weekly summary"]
         backups[("gzip backups<br/>keep 14")]
     end
     you(["You<br/>browser or phone"])
@@ -53,7 +55,7 @@ flowchart LR
     linkStyle default stroke:#75787B,stroke-width:1.5px
 ```
 
-Python 3.13 (3.11 or newer works), SQLite, Streamlit, Plotly. Runs on a laptop for development and in two containers (collector and dashboard) on a small server.
+Python 3.11 or newer (developed on 3.13), SQLite, Streamlit, Plotly. Runs on a laptop for development and in two containers (collector and dashboard) on a small server.
 
 ## Quick start
 
@@ -73,24 +75,20 @@ mise run test
 
 Register for API access on the [Polestar Data Portal](https://data-portal.polestar.com/) (a developer account under the EU Data Act, tied to a Polestar ID that is linked to your car; [terms](https://www.polestar.com/ie/legal/terms-conditions/data-portal)). Create a credential there. It gives you three values, which go into `.env`:
 
-| Portal value | `.env` variable |
-|---|---|
-| Client ID | `APP_ID` |
-| Client secret | `SECRET` |
-| Account ID | `ACCOUNT_ID` |
+It gives you three values: Client ID, Client secret and Account ID. They go into `.env` as `APP_ID`, `SECRET` and `ACCOUNT_ID` (table below).
 
 `M2M_ENDPOINT` is the token URL of the API's server, `https://pc-api.polestar.com/eu-north-1/data-portal/m2m/token` (see [`api.json`](api.json)). The app asks for the read-only `pdp-telemetry/*` and `pdp-charging/*` scopes on its own, so there is nothing to select. Keep the secret out of git (`.env` is ignored) and treat it like a password. [evcc](https://docs.evcc.io/en/vehicles/polestar) documents the same three values.
 
-| Variable | Meaning |
-|---|---|
-| `M2M_ENDPOINT` | Token URL (may end in `/token`) |
-| `APP_ID` | API client ID |
-| `SECRET` | API client secret |
-| `ACCOUNT_ID` | Your account ID, sent as the `x-client-id` header (differs from `APP_ID`) |
-| `DASHBOARD_PASSWORD` | Optional. Puts a login page in front of the whole dashboard (session lasts 12 hours, Sign out in the sidebar). Without it the dashboard is open to anyone who can reach the port. It is a shared password, not user accounts: keep the port on localhost or a private network (Tailscale) or behind a TLS proxy, since plain HTTP sends it in clear text. |
-| `ADMIN_PASSWORD` | Optional. Password that unlocks the few things the dashboard can change (manual charge costs). Without it editing is off. Generate one with `openssl rand -base64 18` |
+| Variable | Portal label | Meaning |
+|---|---|---|
+| `M2M_ENDPOINT` | | Token URL (may end in `/token`) |
+| `APP_ID` | Client ID | API client ID |
+| `SECRET` | Client secret | API client secret |
+| `ACCOUNT_ID` | Account ID | Sent as the `x-client-id` header (differs from `APP_ID`) |
+| `DASHBOARD_PASSWORD` | | Optional login page for the whole dashboard, see [Access](#access-and-the-login-page) |
+| `ADMIN_PASSWORD` | | Optional. Unlocks the few things the dashboard can change (manual charge costs); without it editing is off. Generate one with `openssl rand -base64 18` |
 
-Optional environment variables: `DB_PATH` (default `data/telemetry.db`), `CONFIG_PATH` (default `config.toml`), `BATTERY_KWH` (usable capacity used for energy estimates, default 78, unverified), `CLAUDE_BIN` (path of the `claude` CLI for the weekly report), `POLESTAR_MOCK=1` (show the design mock-up tabs on synthetic data).
+Optional environment variables: `DB_PATH` (default `data/telemetry.db`), `CONFIG_PATH` (default `config.toml`), `BATTERY_KWH` (usable capacity used for energy estimates, default 78, unverified), `BIND_ADDR` (address the dashboard listens on, default `127.0.0.1`), `CLAUDE_BIN` (path of the `claude` CLI for the weekly report), `NOTIFY_URL` (push failure messages, see [Weekly report](#weekly-report-claude-code-cli)), `BACKUP_DIR` and `KEEP` (where `deploy/backup.sh` writes and how many copies it keeps), `COLLECTOR` (container name the host scripts use), `POLESTAR_MOCK=1` (show the design mock-up tabs on synthetic data).
 
 ## Configuration (`config.toml`)
 
@@ -124,7 +122,7 @@ The **Period** selector in the sidebar filters Trips, Charging, Battery, Insight
 - Energy figures are **estimates**: trips use the SoC change times `BATTERY_KWH`, and charge sessions use reported power over time. This car's API exposes no energy counters. Trips under 3 km get no energy estimate because SoC moves in 1 % steps.
 - A charge session whose start was not observed (it began before tracking, or after a long gap) is marked "since tracking began" and its energy is a lower bound.
 - History starts at the first poll. There is no backfill.
-- The dashboard has **no authentication for reading** and shows your location; only editing is password protected. Keep it on localhost or a private network such as Tailscale.
+- The dashboard shows your location. Reading is open unless you set `DASHBOARD_PASSWORD` (see [Access and the login page](#access-and-the-login-page)); editing always needs the admin password. Keep it on localhost or a private network such as Tailscale.
 
 ## Deploy and operate
 
@@ -142,9 +140,9 @@ It runs three tasks in order, and you can run any of them on its own:
 |---|---|
 | `deploy:check` | Checks `.env`, creates `config.toml` from `config.example.toml` if missing, checks for `podman-compose` or `docker compose` |
 | `deploy:stack` | Builds and starts the collector and dashboard, waits for the health check (`http://127.0.0.1:8501`, or `BIND_ADDR`) |
-| `deploy:claude` | Checks the `claude` CLI is installed and logged in, installs the weekly report timer (Mondays 08:15) for this folder. Needs podman |
+| `deploy:claude` | Checks the `claude` CLI is installed and logged in, installs the weekly report timer (Mondays 08:15) for this folder. Needs podman. Skipped, with no `claude` login needed, when `config.toml` has `[report] enabled = false` |
 
-With Docker you get the stack but not the report timer. The sections below cover the same steps by hand.
+With Docker you get the stack but not the report timer, and `deploy/update.sh` and the systemd units assume podman. The sections below cover the same steps by hand.
 
 `Dockerfile` and `docker-compose.yml` run two services that share a volume: `collector` (polls the API) and `app` (the dashboard). `config.toml` and `.env` must exist next to the compose file. Podman and Docker both work.
 
@@ -160,12 +158,13 @@ With rootless podman, enable linger (`loginctl enable-linger <user>`) and instal
 
 ### Access and the login page
 
-By default the dashboard listens on `127.0.0.1` only (`BIND_ADDR` changes that). Reaching it from elsewhere means exposing the port, so decide who can see your drives and charging places. `DASHBOARD_PASSWORD` in `.env` adds a login page; know what it is and is not:
+By default the dashboard listens on `127.0.0.1` only (`BIND_ADDR` changes that). Reaching it from elsewhere means exposing the port, so decide who can see your drives and charging places. `DASHBOARD_PASSWORD` in `.env` adds a login page. Its limits:
 
-- **What it does:** a shared password in front of the whole dashboard. Nothing is read or drawn until it is entered. A session lasts 12 hours, five wrong guesses lock every session for a minute, and an unset password means no login page.
-- **What it is not:** there are no user accounts, no per-user history and no per-address lockout, so a patient attacker is only slowed down. The password is sent as plain text over HTTP, so anyone on the network path can read it. The Streamlit server itself also answers its health check (`/_stcore/health`) and static files without a login.
+- **Scope:** a shared password in front of the whole dashboard. Nothing is read or drawn until it is entered. A session lasts 12 hours, five wrong guesses lock every session for a minute, and an unset password means no login page.
+- **Limits:** there are no user accounts, no per-user history and no per-address lockout, so a patient attacker is only slowed down. The password is sent as plain text over HTTP, so anyone on the network path can read it. The Streamlit server itself also answers its health check (`/_stcore/health`) and static files without a login.
 - **How to use it safely:** keep the port on localhost or a private network such as Tailscale, or put a TLS reverse proxy (Caddy, nginx) in front and bind the app to localhost. Use a long random password (`openssl rand -base64 18`) that you use nowhere else.
 - **When you need more:** accounts or single sign-on need Streamlit's `st.login` with an OpenID Connect provider (Google, Microsoft and so on), or an authenticating proxy; that is not built here.
+- **Setting it:** add `DASHBOARD_PASSWORD=<value>` to `.env` (keep it mode 600) without typing the value into shell history, for example `read -rsp 'Password: ' p; printf 'DASHBOARD_PASSWORD=%s\n' "$p" >> .env; unset p`, then restart the stack (`systemctl --user restart polestar-telemetry`, or `podman-compose up -d`). The same works for `ADMIN_PASSWORD`.
 - **Editing is separate:** `ADMIN_PASSWORD` still guards manual charge costs, so someone who can read cannot change them.
 
 ### Backups
@@ -213,11 +212,14 @@ With ntfy.sh the topic name is the only secret, so pick a long random one; your 
 - Logs: `podman logs -f polestar-telemetry_collector_1` (one line per poll with the number of new rows per domain) and `..._app_1`.
 - A domain returning 404 (saved charge locations on this car) is skipped silently, by design.
 - Times one hour off mean `timezone` is missing from `config.toml`.
+- A new install shows an empty dashboard until the first poll has stored data (up to the poll interval, 5 minutes by default).
+- The login page says "Too many wrong attempts": five wrong passwords lock every session for a minute; wait and retry.
+- The Report tab shows a warning that the weekly report failed: read `journalctl --user -u polestar-report` and re-run `deploy/weekly-report.sh`; the usual cause is an expired `claude` login.
 
 ## Development
 
 ```sh
-mise run test          # 40+ tests; no network and no real claude CLI
+mise run test          # the whole suite; no network and no real claude CLI
 POLESTAR_MOCK=1 mise run app    # adds the "Compare (mock)" and "Path (mock)" design tabs
 ```
 
@@ -246,14 +248,18 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 | `polestar/charging.py` | The car's charging settings, plug-state and amp-limit checks |
 | `polestar/stats.py` | Weekly aggregates without VIN or coordinates |
 | `polestar/report.py` | Weekly report: prompt, storage, `claude -p` call |
+| `polestar/admin.py` | Dashboard and admin passwords: sessions and lockout |
+| `polestar/costs.py` | Manual charge costs stored per session |
 | `polestar/theme.py` | Chart styling, CSS and the status chip |
 | `polestar/mock_compare.py`, `polestar/mock_path.py` | Design mock-ups on synthetic data |
-| `deploy/` | systemd units, `update.sh`, `weekly-report.sh`, `backup.sh` |
+| `deploy/` | systemd units and timers (stack, report, backup), `update.sh`, `weekly-report.sh`, `backup.sh`, `notify.sh` |
+| `static/` | Self-hosted Inter font |
 | `demo/` | Synthetic database and screenshot capture for the README images |
 | `docs/img/` | README screenshots and tour |
-| `.github/workflows/ci.yml` | Lint and tests on every push |
+| `.github/workflows/ci.yml`, `.github/dependabot.yml` | Lint and tests on every push; dependency update PRs |
+| `LICENSE` | MIT |
 | `smoke.py` | Credential and endpoint check |
-| `tests/` | pytest suite (no network, no real `claude`), including a headless dashboard smoke test |
+| `tests/` | pytest suite (no network, no real `claude`), including a headless dashboard run and the host scripts against fake `podman` and `claude` |
 
 ## Roadmap
 
