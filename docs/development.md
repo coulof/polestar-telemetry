@@ -36,7 +36,7 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 | `polestar/theme.py` | Chart styling, CSS and the status chip |
 | `polestar/mock_compare.py`, `polestar/mock_path.py` | Design mock-ups on synthetic data |
 | `deploy/` | systemd units and timers (stack, report, backup), `update.sh`, `weekly-report.sh`, `backup.sh`, `freshness.sh`, `notify.sh` |
-| `static/` | Self-hosted Inter font |
+| `static/` | Self-hosted Inter font and its licence (`OFL.txt`, must stay next to the font) |
 | `demo/` | Synthetic database and screenshot capture for the README images |
 | `docs/img/` | README screenshots and tour |
 | `.github/workflows/ci.yml`, `.github/dependabot.yml` | Lint, tests and a Docker image build with a health check on every push; dependency update PRs |

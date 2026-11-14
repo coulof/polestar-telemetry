@@ -99,6 +99,7 @@ mise run app                        # dashboard on http://localhost:8501
 | [The dashboard](docs/dashboard.md) | What each tab shows and how the data behaves |
 | [Deployment](docs/deployment.md) | Containers, boot persistence, login page, backups, updates, weekly report, troubleshooting |
 | [Development](docs/development.md) | Tests, README images, code layout |
+| [`SECURITY.md`](SECURITY.md) | What to know before exposing the dashboard, and how to report a vulnerability |
 | [`AGENTS.md`](AGENTS.md) | Conventions and data gotchas, for coding agents and people |
 
 ## Roadmap
@@ -111,4 +112,4 @@ mise run app                        # dashboard on http://localhost:8501
 
 ## License
 
-[MIT](LICENSE). The bundled Inter font in `static/` has its own licence (SIL Open Font License). Not affiliated with Polestar; the API terms of the Polestar Data Portal apply to your use of the API.
+[MIT](LICENSE). The bundled Inter font in `static/` is under the SIL Open Font License ([`static/OFL.txt`](static/OFL.txt)). Not affiliated with Polestar; the API terms of the Polestar Data Portal apply to your use of the API.

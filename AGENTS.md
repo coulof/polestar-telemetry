@@ -76,6 +76,15 @@ Polestar look, kept calm and uncluttered: one strong accent on a neutral base, t
 
 `polestar/stats.py` builds the aggregates (never include the VIN or coordinates; a test enforces it). `polestar/report.py` builds the prompt, calls `claude -p` with no tools, skills or MCP from a neutral directory, and stores the result in `reports`. The container has no CLI, so on the server `deploy/weekly-report.sh` runs on the host (a systemd timer, Mondays 08:15) and uses `podman exec` for the stats and storage steps. Failures leave the previous report in place, are recorded in `report_failures` (shown as a warning on the Report tab until that week has a report) and go through `deploy/notify.sh` (stderr, plus a POST to `NOTIFY_URL` when set). New host scripts should source `notify.sh` and call `notify` on failure; keep messages free of data. `tests/test_scripts.py` runs the scripts against fake `podman`, `claude` and `curl`.
 
+## Decisions worth knowing
+
+- **Why energy is an estimate:** the car exposes no energy counters, so trips use the SoC change times `BATTERY_KWH` and sessions use reported power over time. Do not present these as measured.
+- **Why trips use usage-mode windows:** the odometer arrives only at the start and end of a drive, so cadence-based trip detection fails. The odometer-gap method stays as a fallback only.
+- **Why liveness is the last successful poll:** snapshots are deduplicated and a parked car sends no events for hours, so the newest event time looks stale on a healthy system.
+- **Why `mise run report` is development only:** it writes to the local `data/telemetry.db`, not the volume the dashboard reads. On the stack use `deploy/weekly-report.sh`.
+- **Why the dashboard login is a shared password:** one owner, no user database. `st.login` (OIDC) is the upgrade path if several people need accounts.
+- **Why Inter:** the brand face (Unica77) is licensed; Inter (SIL OFL, `static/OFL.txt`) is the free stand-in.
+
 ## Stale-data alert
 
 Liveness is the `poll_status` table (one row, `last_ok` = the last poll that fetched data, written by `collect_once`), read by `polestar/freshness.py`. Never use the newest event time for this: a parked car sends no events for hours. `deploy/freshness.sh` (timer every 15 min) notifies once past `[alerts] stale_hours` (or when the collector is unreachable) and pings `HEARTBEAT_URL` (Healthchecks.io) while fresh, `/fail` when stale. The ping URL is a secret: it lives only in a systemd drop-in on the host, never in the repo or in output.
