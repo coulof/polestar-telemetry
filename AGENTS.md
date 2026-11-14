@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guide for coding agents (and people) working on this repository. `README.md` has the product overview and setup.
+Guide for coding agents (and people) working on this repository. `README.md` has the quick start; the rest is under `docs/`.
 
 ## Project at a glance
 
@@ -13,7 +13,7 @@ client.py -> collect.py -> data/telemetry.db -> derive.py / insights.py / chargi
 
 - Snapshots are stored raw (`snapshots` table, one JSON payload per event, deduped on `metaEventId`); everything else is derived on read. A `reports` table holds the weekly reports.
 - Two long-running processes share the SQLite file (collector and dashboard); `collect.connect()` enables WAL.
-- Module map: see the Layout table in `README.md`. `app.py` loads data and lays out the tabs; figures, badges and charging notes live in `polestar/views.py`.
+- Module map: see the Layout table in `docs/development.md`. `app.py` loads data and lays out the tabs; figures, badges and charging notes live in `polestar/views.py`.
 
 ## Commands
 
@@ -89,5 +89,5 @@ Development and the running stack live on the same host. Rootless podman with `p
 
 1. `uv run pytest -q` passes (it includes a headless dashboard run on a synthetic database) and `uvx ruff check --select E9,F polestar app.py tests demo smoke.py` is clean; CI runs both.
 2. Headless check: `AppTest.from_file("app.py", default_timeout=60).run()` raises no exception (also with `DB_PATH` on a copy of real data when logic over real events changed).
-3. For visual changes, screenshot light, dark and a phone width with Playwright (`demo/capture.py` does this on a synthetic database; see "Regenerate the README images" in `README.md`). It needs a Chrome or Chromium.
+3. For visual changes, screenshot light, dark and a phone width with Playwright (`demo/capture.py` does this on a synthetic database; see "Regenerate the README images" in `docs/development.md`). It needs a Chrome or Chromium.
 4. After an update: `curl http://$BIND_ADDR:8501/_stcore/health` returns `ok` (`127.0.0.1` when `BIND_ADDR` is unset), `podman logs --since 3m polestar-telemetry_app_1` shows no traceback, and the collector logs a poll within a minute.

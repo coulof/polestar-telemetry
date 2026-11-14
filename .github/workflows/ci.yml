@@ -14,3 +14,30 @@ jobs:
       - run: uv sync --frozen
       - run: uvx ruff check --select E9,F polestar app.py tests demo smoke.py
       - run: uv run pytest -q
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: polestar-telemetry:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: The dashboard starts and reports healthy
+        run: |
+          docker run -d --name app -p 8501:8501 polestar-telemetry:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8501/_stcore/health && exit 0
+            sleep 2
+          done
+          docker logs app; exit 1
+      - name: The collector entry point imports and the mock-ups stay out of the image
+        run: |
+          docker run --rm polestar-telemetry:ci python -c "import polestar.collect, polestar.report"
+          ! docker run --rm polestar-telemetry:ci sh -c 'ls polestar/mock_*.py'

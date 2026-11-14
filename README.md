@@ -59,207 +59,47 @@ Python 3.11 or newer (developed on 3.13), SQLite, Streamlit, Plotly. Runs on a l
 
 ## Quick start
 
-Requires [mise](https://mise.jdx.dev), which installs Python and [uv](https://docs.astral.sh/uv/).
+Needs a Linux or macOS machine with [mise](https://mise.jdx.dev), git and podman (or docker). Register for API access on the [Polestar Data Portal](https://data-portal.polestar.com/) first and note the Client ID, Client secret and Account ID ([how](docs/configuration.md#credentials-env-never-committed)).
+
+### Deploy (copy and paste)
+
+Replace the three placeholders, then run the block. It builds the two containers, waits until the dashboard is healthy and installs the weekly Claude report timer.
 
 ```sh
-mise run setup                       # install dependencies
-cp config.example.toml config.toml   # optional: poll intervals, priced locations, tariffs
-mise run smoke                       # check credentials and endpoints (prints field names only)
-mise run collect                     # poll once and store a snapshot
-mise run watch                       # poll in a loop (60 s while charging or driving, 300 s otherwise)
-mise run app                         # dashboard on http://localhost:8501
-mise run test
-```
-
-### Credentials (`.env`, never committed)
-
-Register for API access on the [Polestar Data Portal](https://data-portal.polestar.com/) (a developer account under the EU Data Act, tied to a Polestar ID that is linked to your car; [terms](https://www.polestar.com/ie/legal/terms-conditions/data-portal)). Create a credential there. It gives you three values, which go into `.env`:
-
-It gives you three values: Client ID, Client secret and Account ID. They go into `.env` as `APP_ID`, `SECRET` and `ACCOUNT_ID` (table below).
-
-`M2M_ENDPOINT` is the token URL of the API's server, `https://pc-api.polestar.com/eu-north-1/data-portal/m2m/token` (see [`api.json`](api.json)). The app asks for the read-only `pdp-telemetry/*` and `pdp-charging/*` scopes on its own, so there is nothing to select. Keep the secret out of git (`.env` is ignored) and treat it like a password. [evcc](https://docs.evcc.io/en/vehicles/polestar) documents the same three values.
-
-| Variable | Portal label | Meaning |
-|---|---|---|
-| `M2M_ENDPOINT` | | Token URL (may end in `/token`) |
-| `APP_ID` | Client ID | API client ID |
-| `SECRET` | Client secret | API client secret |
-| `ACCOUNT_ID` | Account ID | Sent as the `x-client-id` header (differs from `APP_ID`) |
-| `DASHBOARD_PASSWORD` | | Optional login page for the whole dashboard, see [Access](#access-and-the-login-page) |
-| `ADMIN_PASSWORD` | | Optional. Unlocks the few things the dashboard can change (manual charge costs); without it editing is off. Generate one with `openssl rand -base64 18` |
-
-Optional environment variables: `DB_PATH` (default `data/telemetry.db`), `CONFIG_PATH` (default `config.toml`), `BATTERY_KWH` (usable capacity used for energy estimates, default 78, unverified), `BIND_ADDR` (address the dashboard listens on, default `127.0.0.1`), `CLAUDE_BIN` (path of the `claude` CLI for the weekly report), `NOTIFY_URL` (push failure messages, see [Weekly report](#weekly-report-claude-code-cli)), `BACKUP_DIR` and `KEEP` (where `deploy/backup.sh` writes and how many copies it keeps), `COLLECTOR` (container name the host scripts use), `POLESTAR_MOCK=1` (show the design mock-up tabs on synthetic data).
-
-## Configuration (`config.toml`)
-
-Personal and gitignored; copy [`config.example.toml`](config.example.toml). It is re-read on every poll, so edits apply without a restart.
-
-- **Polling:** `[poll] interval` and `interval_active` are the seconds between polls when idle and while charging or driving (defaults 300 and 60). The collector flags `--interval` and `--interval-active` take precedence.
-- **Locations and prices:** one `[[location]]` per place with `name`, `lat`, `lon`, `radius_m` and `price_per_kwh`. A charge session is priced by the position the car last reported before it started.
-  - Optional `[[location.tariff]]` sub-tables give time-of-use pricing: `from`, `to`, `price_per_kwh` and an optional `days` list such as `["sat", "sun"]`. Windows may cross midnight, and `from = to` means the whole day. Each reading interval of a session is priced separately.
-  - Optional `session_fee` is a fixed amount added once to each charging session at that place.
-  - `[pricing] default_price_per_kwh` covers charges away from any listed place. When unset, the cost there is unknown.
-- **Clock:** a top-level `timezone` (default `Europe/Paris`) sets the time shown in the dashboard and the clock for tariffs and weeks. The server containers run in UTC, so this matters.
-- **Other tables:** `[report]` has `enabled` (default `true`; `false` hides the Report tab and makes the weekly report script exit without calling Claude), `timezone` and `model` (Claude Code model alias). `[service]` has `warn_days` and `warn_km` for the service-due warning. `[co2]` has `g_per_kwh`, which enables CO2 figures in Insights.
-
-## What the dashboard shows
-
-- **Now:** charge gauge with low and high zones, range, a status chip (Charging, Driving, Parked) that pulses while active, energy and cost so far when charging, lock and service badges, last position with its age. Charging notes appear only for exceptions: plugged in but not charging, a charger fault, or charging at a peak rate while a cheaper window is coming.
-- **Report:** a weekly "hot takes" summary written by Claude from the week's aggregated stats, with the numbers behind it.
-- **Trips:** distance per day, estimated consumption (kWh/100 km) and a table. A trip is one driving window.
-- **Charging:** sessions with a power curve, energy and cost by location, "could have saved" (peak-rate energy priced at the cheapest rate), a warning when sessions run below the car's amp limit, and the car's charging settings (target charge, amp limit, timers, read-only). If a session's estimated cost is wrong (a different tariff, a fee, a free charge), open "Set the cost manually" under the chart, unlock it with the admin password (15 minutes per browser session, five wrong guesses lock everyone out for a minute) and enter what you paid; it replaces the estimate in the dashboard and in the weekly report, and "Use estimate" brings the estimate back. Corrections are stored in the `session_costs` table, keyed by the session's start time.
-- **Battery:** state of charge over time with charging sessions shaded, and SoC lost while parked.
-- **Insights:** real-world range, energy per full charge, cost per 100 km, optional CO2, a driving, charging and parked timeline, and a monthly table.
-- **Air:** cabin air quality index and PM2.5 over time, a daily summary and pre-cleaning cycles. The API documents neither the index scale nor the PM2.5 unit.
-- **Data:** snapshot counts and freshness per domain, and the latest raw payload.
-
-The **Period** selector in the sidebar filters Trips, Charging, Battery, Insights and Air. Now, Report and Data always show the latest.
-
-## How the data behaves
-
-- Telemetry is **event-driven**: the car pushes an update only when a value changes. The battery reports every few minutes while charging. A poll sees only the latest event, so a shorter interval captures more of them.
-- **While driving** the car sends battery events but no position, and the odometer only when a drive starts and when it ends. Trips are therefore the car's driving windows (from usage-mode events) with the distance taken from the odometer at both ends. There is no route to draw, only where the car parked.
-- Energy figures are **estimates**: trips use the SoC change times `BATTERY_KWH`, and charge sessions use reported power over time. This car's API exposes no energy counters. Trips under 3 km get no energy estimate because SoC moves in 1 % steps.
-- A charge session whose start was not observed (it began before tracking, or after a long gap) is marked "since tracking began" and its energy is a lower bound.
-- History starts at the first poll. There is no backfill.
-- The dashboard shows your location. Reading is open unless you set `DASHBOARD_PASSWORD` (see [Access and the login page](#access-and-the-login-page)); editing always needs the admin password. Keep it on localhost or a private network such as Tailscale.
-
-## Deploy and operate
-
-### One-command deploy
-
-With `.env` in place (see [Credentials](#credentials-env-never-committed)), one command brings everything up:
-
-```sh
+git clone https://github.com/coulof/polestar-telemetry.git && cd polestar-telemetry
+cat > .env <<'EOF'
+M2M_ENDPOINT=https://pc-api.polestar.com/eu-north-1/data-portal/m2m/token
+APP_ID=<client id>
+SECRET=<client secret>
+ACCOUNT_ID=<account id>
+EOF
+chmod 600 .env
 mise run deploy
 ```
 
-It runs three tasks in order, and you can run any of them on its own:
+Open <http://127.0.0.1:8501>. The first data appears after the first poll (up to 5 minutes).
 
-| Task | What it does |
+- **No Claude subscription?** Run `mise run deploy:stack` instead: it skips the weekly report. Also set `[report] enabled = false` in `config.toml` to hide the Report tab.
+- **Prices, locations, time zone:** edit the `config.toml` that deploy created from [`config.example.toml`](config.example.toml); changes apply without a restart.
+- **Reach it from your phone or add a login:** see [Deployment](docs/deployment.md#access-and-the-login-page).
+
+### Run from source (development)
+
+```sh
+mise run setup && mise run smoke    # install, then check credentials (prints field names only)
+mise run watch                      # collect in a loop
+mise run app                        # dashboard on http://localhost:8501
+```
+
+## Documentation
+
+| Page | Covers |
 |---|---|
-| `deploy:check` | Checks `.env`, creates `config.toml` from `config.example.toml` if missing, checks for `podman-compose` or `docker compose` |
-| `deploy:stack` | Builds and starts the collector and dashboard, waits for the health check (`http://127.0.0.1:8501`, or `BIND_ADDR`) |
-| `deploy:claude` | Checks the `claude` CLI is installed and logged in, installs the weekly report timer (Mondays 08:15) for this folder. Needs podman. Skipped, with no `claude` login needed, when `config.toml` has `[report] enabled = false` |
-
-With Docker you get the stack but not the report timer, and `deploy/update.sh` and the systemd units assume podman. The sections below cover the same steps by hand.
-
-`Dockerfile` and `docker-compose.yml` run two services that share a volume: `collector` (polls the API) and `app` (the dashboard). `config.toml` and `.env` must exist next to the compose file. Podman and Docker both work.
-
-```sh
-BIND_ADDR=<private-ip> podman-compose up -d --build     # or: docker compose up -d --build
-```
-
-`BIND_ADDR` defaults to `127.0.0.1`. Set it to a private interface address (for example a Tailscale IP) to reach the dashboard from other devices.
-
-### Keep it running
-
-With rootless podman, enable linger (`loginctl enable-linger <user>`) and install [`deploy/polestar-telemetry.service`](deploy/polestar-telemetry.service) as a systemd user unit. It waits for the private interface, then runs `podman-compose up -d` at boot.
-
-### Access and the login page
-
-By default the dashboard listens on `127.0.0.1` only (`BIND_ADDR` changes that). Reaching it from elsewhere means exposing the port, so decide who can see your drives and charging places. `DASHBOARD_PASSWORD` in `.env` adds a login page. Its limits:
-
-- **Scope:** a shared password in front of the whole dashboard. Nothing is read or drawn until it is entered. A session lasts 12 hours, five wrong guesses lock every session for a minute, and an unset password means no login page.
-- **Limits:** there are no user accounts, no per-user history and no per-address lockout, so a patient attacker is only slowed down. The password is sent as plain text over HTTP, so anyone on the network path can read it. The Streamlit server itself also answers its health check (`/_stcore/health`) and static files without a login.
-- **How to use it safely:** keep the port on localhost or a private network such as Tailscale, or put a TLS reverse proxy (Caddy, nginx) in front and bind the app to localhost. Use a long random password (`openssl rand -base64 18`) that you use nowhere else.
-- **When you need more:** accounts or single sign-on need Streamlit's `st.login` with an OpenID Connect provider (Google, Microsoft and so on), or an authenticating proxy; that is not built here.
-- **Setting it:** add `DASHBOARD_PASSWORD=<value>` to `.env` (keep it mode 600) without typing the value into shell history, for example `read -rsp 'Password: ' p; printf 'DASHBOARD_PASSWORD=%s\n' "$p" >> .env; unset p`, then restart the stack (`systemctl --user restart polestar-telemetry`, or `podman-compose up -d`). The same works for `ADMIN_PASSWORD`.
-- **Editing is separate:** `ADMIN_PASSWORD` still guards manual charge costs, so someone who can read cannot change them.
-
-### Backups
-
-History cannot be re-fetched (the API only returns the current state), so back the database up. [`deploy/backup.sh`](deploy/backup.sh) takes an online SQLite backup from the collector container, gzips it into `~/polestar-backups` (mode 700) and keeps the newest 14 (`KEEP`, `BACKUP_DIR`). The copies contain the VIN and positions: keep them off shared storage. Nightly at 03:30:
-
-```sh
-cp deploy/polestar-backup.{service,timer} ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now polestar-backup.timer
-deploy/backup.sh      # run it now
-```
-
-### Update
-
-On the host, in a git clone of this repository:
-
-```sh
-deploy/update.sh      # runs the tests, git pull --ff-only, rebuilds the images, restarts, checks health
-```
-
-`config.toml` and `.env` are not in git. Keep them in the project folder on the host and edit them there.
-
-### Weekly report (Claude Code CLI)
-
-The report is written by the Claude Code CLI (`claude -p`, your subscription login, no API key). The container has no CLI, so a host-side timer runs [`deploy/weekly-report.sh`](deploy/weekly-report.sh): it asks the collector container for the prompt, pipes it to `claude` (text only: no tools, skills or MCP), and stores the answer through the container. Only aggregated figures are sent, never the VIN or coordinates. Install on the host, which needs the `claude` CLI logged in:
-
-```sh
-cp deploy/polestar-report.{service,timer} ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now polestar-report.timer   # Mondays 08:15
-deploy/weekly-report.sh [ISO-WEEK]    # run it now; FORCE=1 replaces an existing report
-mise run report                       # or locally, against the local database
-```
-
-If a run fails (for example the CLI login expired) the Report tab keeps showing the previous report and adds a warning with the failed step, until a report for that week is stored. The same warning goes to the journal (`journalctl --user -u polestar-report`) and, if you set `NOTIFY_URL`, to your phone: the scripts POST the message to that URL in the [ntfy](https://ntfy.sh) style (title in a header, message as the body). The message holds only the step and exit code, never data. The nightly backup uses the same channel. Set it on the timers' services, for example with a private topic name:
-
-```sh
-systemctl --user edit polestar-report    # add:  [Service]  Environment=NOTIFY_URL=https://ntfy.sh/<your-secret-topic>
-systemctl --user edit polestar-backup
-```
-
-With ntfy.sh the topic name is the only secret, so pick a long random one; your own ntfy server works the same way.
-
-### Troubleshooting
-
-- Logs: `podman logs -f polestar-telemetry_collector_1` (one line per poll with the number of new rows per domain) and `..._app_1`.
-- A domain returning 404 (saved charge locations on this car) is skipped silently, by design.
-- Times one hour off mean `timezone` is missing from `config.toml`.
-- A new install shows an empty dashboard until the first poll has stored data (up to the poll interval, 5 minutes by default).
-- The login page says "Too many wrong attempts": five wrong passwords lock every session for a minute; wait and retry.
-- The Report tab shows a warning that the weekly report failed: read `journalctl --user -u polestar-report` and re-run `deploy/weekly-report.sh`; the usual cause is an expired `claude` login.
-
-## Development
-
-```sh
-mise run test          # the whole suite; no network and no real claude CLI
-POLESTAR_MOCK=1 mise run app    # adds the "Compare (mock)" and "Path (mock)" design tabs
-```
-
-Regenerate the README images from a synthetic database (never real data):
-
-```sh
-uv run python demo/make_demo_db.py data/demo.db
-DB_PATH=data/demo.db CONFIG_PATH=demo/config.toml uv run python -m polestar.report --generate --week <last ISO week>   # optional: needs claude
-DB_PATH=data/demo.db CONFIG_PATH=demo/config.toml .venv/bin/python -m streamlit run app.py --server.port 8599 &
-uv run --no-project --with playwright python demo/capture.py http://localhost:8599 docs/img   # CHROME=/path/to/chrome if needed
-```
-
-Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS.md`](AGENTS.md), which is written for coding agents and is just as useful for people.
-
-## Layout
-
-| Path | Purpose |
-|---|---|
-| `app.py` | Streamlit dashboard: sidebar, data loading and the tabs |
-| `polestar/views.py` | Plotly figures, status badges and charging notes used by the tabs |
-| `polestar/client.py` | OAuth token cache and telemetry GETs |
-| `polestar/collect.py` | Poll loop, SQLite storage deduped on `metaEventId` |
-| `polestar/config.py` | `config.toml` loading, location matching, tariffs |
-| `polestar/derive.py` | Trips, charge sessions, parked drain, pricing, air quality |
-| `polestar/insights.py` | Real-world range, capacity trend, monthly costs, state timeline |
-| `polestar/charging.py` | The car's charging settings, plug-state and amp-limit checks |
-| `polestar/stats.py` | Weekly aggregates without VIN or coordinates |
-| `polestar/report.py` | Weekly report: prompt, storage, `claude -p` call |
-| `polestar/admin.py` | Dashboard and admin passwords: sessions and lockout |
-| `polestar/costs.py` | Manual charge costs stored per session |
-| `polestar/theme.py` | Chart styling, CSS and the status chip |
-| `polestar/mock_compare.py`, `polestar/mock_path.py` | Design mock-ups on synthetic data |
-| `deploy/` | systemd units and timers (stack, report, backup), `update.sh`, `weekly-report.sh`, `backup.sh`, `notify.sh` |
-| `static/` | Self-hosted Inter font |
-| `demo/` | Synthetic database and screenshot capture for the README images |
-| `docs/img/` | README screenshots and tour |
-| `.github/workflows/ci.yml`, `.github/dependabot.yml` | Lint and tests on every push; dependency update PRs |
-| `LICENSE` | MIT |
-| `smoke.py` | Credential and endpoint check |
-| `tests/` | pytest suite (no network, no real `claude`), including a headless dashboard run and the host scripts against fake `podman` and `claude` |
+| [Configuration](docs/configuration.md) | Credentials, environment variables, `config.toml` (prices, tariffs, timezone) |
+| [The dashboard](docs/dashboard.md) | What each tab shows and how the data behaves |
+| [Deployment](docs/deployment.md) | Containers, boot persistence, login page, backups, updates, weekly report, troubleshooting |
+| [Development](docs/development.md) | Tests, README images, code layout |
+| [`AGENTS.md`](AGENTS.md) | Conventions and data gotchas, for coding agents and people |
 
 ## Roadmap
 

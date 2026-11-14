@@ -44,7 +44,7 @@ description = "Check .env, config.toml and a container engine (creates config.to
 hide = true
 run = """
 set -eu
-[ -f .env ] || { echo "missing .env (M2M_ENDPOINT, APP_ID, SECRET, ACCOUNT_ID): see README" >&2; exit 1; }
+[ -f .env ] || { echo "missing .env (M2M_ENDPOINT, APP_ID, SECRET, ACCOUNT_ID): see docs/configuration.md" >&2; exit 1; }
 [ -f config.toml ] || { cp config.example.toml config.toml; echo "created config.toml from the example: edit it"; }
 command -v podman-compose >/dev/null || docker compose version >/dev/null 2>&1 \
   || { echo "need podman-compose or docker compose" >&2; exit 1; }
@@ -75,7 +75,7 @@ command -v claude >/dev/null || { echo "claude CLI not found: install it and log
 command -v podman >/dev/null || { echo "the report timer needs podman (weekly-report.sh uses podman exec)" >&2; exit 1; }
 printf ok | claude -p --tools "" --no-session-persistence --output-format text >/dev/null \
   || { echo "claude is not logged in: run claude and log in" >&2; exit 1; }
-collector="$(podman ps --filter name=collector --format '{{.Names}}' | head -1)"
+collector="$(podman ps --filter name=collector --format '{{ "{{" }}.Names{{ "}}" }}' | head -1)"
 unit="$HOME/.config/systemd/user"; mkdir -p "$unit"
 sed -e "s|%h/src/polestar-telemetry|$PWD|" \
     -e "/^\\[Service\\]/a Environment=COLLECTOR=$collector" \
