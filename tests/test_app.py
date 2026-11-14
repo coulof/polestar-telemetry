@@ -35,6 +35,15 @@ def test_dashboard_renders_without_exceptions(app):
     assert [t.label for t in at.tabs][:8] == ["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
 
 
+def test_report_tab_is_hidden_when_the_integration_is_disabled(app, tmp_path, monkeypatch):
+    cfg = tmp_path / "off.toml"
+    cfg.write_text((Path(__file__).parent.parent / "demo" / "config.toml").read_text().replace("[report]", "[report]\nenabled = false"))
+    monkeypatch.setenv("CONFIG_PATH", str(cfg))
+    at = app.run()
+    assert not at.exception
+    assert [t.label for t in at.tabs] == ["Now", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
+
+
 def test_mock_tabs_only_with_the_mock_flag(app, monkeypatch):
     monkeypatch.setenv("POLESTAR_MOCK", "1")
     at = app.run()
@@ -105,3 +114,11 @@ def test_report_tab_warns_about_a_failed_weekly_report(app, demo_db):
         with collect.connect(demo_db) as db:
             db.execute("DELETE FROM report_failures")
             db.commit()
+
+
+def test_period_can_be_the_last_day(app):
+    at = app.run()
+    sel = next(s for s in at.sidebar.selectbox if s.label == "Period")
+    assert sel.options[0] == "Last day" and sel.value == 30
+    sel.select(1).run()
+    assert not at.exception

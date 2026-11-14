@@ -116,8 +116,8 @@ with st.sidebar:
     st.header("Settings")
     st.number_input("Usable battery (kWh)", 40.0, 120.0, derive.BATTERY_KWH, 1.0, key="battery_kwh",
                     help="Used to turn SoC changes into kWh. Estimate.")   # per session: not a shared module global
-    period_days = st.selectbox("Period", [7, 30, 90, 365, 0], index=1,
-                               format_func=lambda d: "All" if d == 0 else f"Last {d} days")
+    period_days = st.selectbox("Period", [1, 7, 30, 90, 365, 0], index=2,
+                               format_func=lambda d: "All" if d == 0 else "Last day" if d == 1 else f"Last {d} days")
     if st.button("Reload data"):
         st.cache_data.clear()
 
@@ -148,40 +148,46 @@ if period_days and not sessions.empty:
 sessions = derive.price_sessions(sessions, location, config.load(), battery, manual=manual_costs())
 
 MOCK = os.environ.get("POLESTAR_MOCK") == "1"   # design mock-up on synthetic data, never on the server
-tabs = st.tabs(["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
-               + (["Compare (mock)", "Path (mock)"] if MOCK else []))
-tab_now, tab_report, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = tabs[:8]
+REPORT_ON = config.load()["report"]["enabled"]   # [report] enabled = false hides the Claude integration
+names = ["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
+if not REPORT_ON:
+    names.remove("Report")
+names += ["Compare (mock)", "Path (mock)"] if MOCK else []
+tabs = dict(zip(names, st.tabs(names)))
+tab_now, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = (
+    tabs[n] for n in ("Now", "Trips", "Charging", "Battery", "Insights", "Air", "Data"))
 
 # ---- now -----------------------------------------------------------------
 with tab_now:
     now_tab()
 
 # ---- weekly report -------------------------------------------------------
-with tab_report:
-    rdb = connect(DB_PATH)
-    weeks = report.list_weeks(rdb)
-    failure = report.latest_failure(rdb)
-    if failure:
-        st.warning(f"The weekly report for {failure['week']} could not be written: {failure['error']} "
-                   f"({failure['failed_at'][:16].replace('T', ' ')} UTC)." + (" The report below is the previous one." if weeks else ""),
-                   icon=":material/error:")
-    if not weeks:
-        empty("No weekly report yet. A timer on the server writes one every Monday morning; "
-              "run `deploy/weekly-report.sh` there (or `mise run report` locally) to create the first.",
-              ":material/auto_awesome:")
-    else:
-        wk = st.selectbox("Week", [w["week"] for w in weeks], label_visibility="collapsed")
-        r = report.get(rdb, wk)
-        week_stats = json.loads(r["stats"])
-        with st.container(border=True):
-            st.caption(f"{week_stats['period']['start']} to {week_stats['period']['end']}")
-            st.markdown(r["markdown"])
-        st.caption(f"Written by Claude ({r['model']}) on {r['created_at'][:10]} from estimated figures; "
-                   "only aggregates were sent, no VIN or coordinates.")
-        with st.expander("Numbers behind it"):
-            st.json(week_stats, expanded=1)
+if REPORT_ON:
+    with tabs["Report"]:
+        rdb = connect(DB_PATH)
+        weeks = report.list_weeks(rdb)
+        failure = report.latest_failure(rdb)
+        if failure:
+            st.warning(f"The weekly report for {failure['week']} could not be written: {failure['error']} "
+                       f"({failure['failed_at'][:16].replace('T', ' ')} UTC)." + (" The report below is the previous one." if weeks else ""),
+                       icon=":material/error:")
+        if not weeks:
+            empty("No weekly report yet. A timer on the server writes one every Monday morning; "
+                  "run `deploy/weekly-report.sh` there (or `mise run report` locally) to create the first.",
+                  ":material/auto_awesome:")
+        else:
+            wk = st.selectbox("Week", [w["week"] for w in weeks], label_visibility="collapsed")
+            r = report.get(rdb, wk)
+            week_stats = json.loads(r["stats"])
+            with st.container(border=True):
+                st.caption(f"{week_stats['period']['start']} to {week_stats['period']['end']}")
+                st.markdown(r["markdown"])
+            st.caption(f"Written by Claude ({r['model']}) on {r['created_at'][:10]} from estimated figures; "
+                       "only aggregates were sent, no VIN or coordinates.")
+            with st.expander("Numbers behind it"):
+                st.json(week_stats, expanded=1)
 
-rdb.close()
+    rdb.close()
 
 # ---- trips ---------------------------------------------------------------
 with tab_trips:
@@ -430,7 +436,7 @@ with tab_data:
 
 if MOCK:
     from polestar import mock_compare, mock_path
-    with tabs[8]:
+    with tabs["Compare (mock)"]:
         mock_compare.render()
-    with tabs[9]:
+    with tabs["Path (mock)"]:
         mock_path.render()

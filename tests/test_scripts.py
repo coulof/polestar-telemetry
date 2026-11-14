@@ -15,6 +15,7 @@ case "$*" in
   *--week-id*) echo 2026-W20 ;;
   *--exists*) exit 1 ;;
   *--prompt*) echo "PROMPT" ;;
+  *"python -c"*"enabled"*) [ "${REPORT_OFF:-}" = 1 ] && echo False || echo True ;;
   *"python -c"*"config"*) echo sonnet ;;
   *--failed*|*--store*) echo "stdin: $(cat)" >> "$LOG" ;;
 esac
@@ -50,6 +51,12 @@ def test_report_success_stores_and_does_not_notify(env):
     r, log = env("weekly-report.sh", NOTIFY_URL="https://ntfy.test/topic")
     assert r.returncode == 0
     assert "--store 2026-W20" in log and "curl" not in log and "--failed" not in log
+
+
+def test_disabled_integration_skips_claude_and_stays_quiet(env):
+    r, log = env("weekly-report.sh", NOTIFY_URL="https://ntfy.test/topic", REPORT_OFF="1", CLAUDE_FAIL="1")
+    assert r.returncode == 0 and "disabled" in r.stdout
+    assert "--store" not in log and "--failed" not in log and "curl" not in log
 
 
 def test_claude_failure_is_recorded_and_notified(env):

@@ -101,7 +101,7 @@ Personal and gitignored; copy [`config.example.toml`](config.example.toml). It i
   - Optional `session_fee` is a fixed amount added once to each charging session at that place.
   - `[pricing] default_price_per_kwh` covers charges away from any listed place. When unset, the cost there is unknown.
 - **Clock:** a top-level `timezone` (default `Europe/Paris`) sets the time shown in the dashboard and the clock for tariffs and weeks. The server containers run in UTC, so this matters.
-- **Other tables:** `[report]` has `timezone` and `model` (Claude Code model alias). `[service]` has `warn_days` and `warn_km` for the service-due warning. `[co2]` has `g_per_kwh`, which enables CO2 figures in Insights.
+- **Other tables:** `[report]` has `enabled` (default `true`; `false` hides the Report tab and makes the weekly report script exit without calling Claude), `timezone` and `model` (Claude Code model alias). `[service]` has `warn_days` and `warn_km` for the service-due warning. `[co2]` has `g_per_kwh`, which enables CO2 figures in Insights.
 
 ## What the dashboard shows
 

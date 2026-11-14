@@ -21,6 +21,10 @@ on_error() {
 }
 trap on_error ERR
 
+ENABLED="$(podman exec "$C" python -c "from polestar import config; print(config.load()['report']['enabled'])")"
+if [ "$ENABLED" != True ]; then
+  echo "weekly report disabled ([report] enabled = false in config.toml)"; exit 0
+fi
 [ -n "$WEEK" ] || WEEK="$(podman exec "$C" python -m polestar.report --week-id)"
 STEP="reading the stats"
 if [ "${FORCE:-0}" != 1 ] && podman exec "$C" python -m polestar.report --exists "$WEEK"; then

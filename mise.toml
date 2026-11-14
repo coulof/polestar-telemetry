@@ -69,6 +69,8 @@ description = "Install the weekly report timer (needs podman and a logged-in cla
 depends = ["deploy:stack"]
 run = """
 set -eu
+python3 -c "import sys,tomllib; sys.exit(0 if tomllib.load(open('config.toml','rb')).get('report',{}).get('enabled',True) else 1)" \
+  || { echo "Claude integration disabled in config.toml ([report] enabled = false): skipping the weekly report timer"; exit 0; }
 command -v claude >/dev/null || { echo "claude CLI not found: install it and log in, then re-run" >&2; exit 1; }
 command -v podman >/dev/null || { echo "the report timer needs podman (weekly-report.sh uses podman exec)" >&2; exit 1; }
 printf ok | claude -p --tools "" --no-session-persistence --output-format text >/dev/null \

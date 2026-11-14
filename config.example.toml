@@ -15,6 +15,7 @@ warn_km = 1500     # ...or this many km
 # g_per_kwh = 60    # grid carbon intensity; enables CO2 figures in the Insights tab
 
 [report]
+enabled = true                # false turns the Claude integration off: no Report tab, no weekly report
 timezone = "Europe/Paris"   # weeks run Monday to Sunday in this timezone
 model = "sonnet"             # Claude Code model alias for the weekly report
 
