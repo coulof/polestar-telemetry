@@ -17,6 +17,20 @@ st.set_page_config(page_title="Polestar telemetry", page_icon="⚡", layout="wid
                    initial_sidebar_state="collapsed")
 st.markdown(theme.CSS, unsafe_allow_html=True)
 
+# Optional login (DASHBOARD_PASSWORD): nothing below runs, so no data is read, until the password is right.
+if admin.configured("viewer") and not admin.unlocked(st.session_state, scope="viewer"):
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid, st.form("login"):
+        st.subheader("Polestar telemetry")
+        pw = st.text_input("Password", type="password")
+        if st.form_submit_button("Sign in", width="stretch"):
+            problem = admin.unlock(st.session_state, pw, scope="viewer")
+            if problem:
+                st.error(problem, icon=":material/lock:")
+            else:
+                st.rerun()
+    st.stop()
+
 LOCAL_TZ = ZoneInfo(config.load()["timezone"])   # not the machine's: the server container runs in UTC
 
 
@@ -120,6 +134,9 @@ with st.sidebar:
                                format_func=lambda d: "All" if d == 0 else "Last day" if d == 1 else f"Last {d} days")
     if st.button("Reload data"):
         st.cache_data.clear()
+    if admin.configured("viewer") and st.button("Sign out"):
+        admin.lock(st.session_state, scope="viewer")
+        st.rerun()
 
 st.title("Polestar 2")
 

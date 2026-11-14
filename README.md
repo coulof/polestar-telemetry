@@ -87,6 +87,7 @@ Register for API access on the [Polestar Data Portal](https://data-portal.polest
 | `APP_ID` | API client ID |
 | `SECRET` | API client secret |
 | `ACCOUNT_ID` | Your account ID, sent as the `x-client-id` header (differs from `APP_ID`) |
+| `DASHBOARD_PASSWORD` | Optional. Puts a login page in front of the whole dashboard (session lasts 12 hours, Sign out in the sidebar). Without it the dashboard is open to anyone who can reach the port. It is a shared password, not user accounts: keep the port on localhost or a private network (Tailscale) or behind a TLS proxy, since plain HTTP sends it in clear text. |
 | `ADMIN_PASSWORD` | Optional. Password that unlocks the few things the dashboard can change (manual charge costs). Without it editing is off. Generate one with `openssl rand -base64 18` |
 
 Optional environment variables: `DB_PATH` (default `data/telemetry.db`), `CONFIG_PATH` (default `config.toml`), `BATTERY_KWH` (usable capacity used for energy estimates, default 78, unverified), `CLAUDE_BIN` (path of the `claude` CLI for the weekly report), `POLESTAR_MOCK=1` (show the design mock-up tabs on synthetic data).
@@ -156,6 +157,16 @@ BIND_ADDR=<private-ip> podman-compose up -d --build     # or: docker compose up 
 ### Keep it running
 
 With rootless podman, enable linger (`loginctl enable-linger <user>`) and install [`deploy/polestar-telemetry.service`](deploy/polestar-telemetry.service) as a systemd user unit. It waits for the private interface, then runs `podman-compose up -d` at boot.
+
+### Access and the login page
+
+By default the dashboard listens on `127.0.0.1` only (`BIND_ADDR` changes that). Reaching it from elsewhere means exposing the port, so decide who can see your drives and charging places. `DASHBOARD_PASSWORD` in `.env` adds a login page; know what it is and is not:
+
+- **What it does:** a shared password in front of the whole dashboard. Nothing is read or drawn until it is entered. A session lasts 12 hours, five wrong guesses lock every session for a minute, and an unset password means no login page.
+- **What it is not:** there are no user accounts, no per-user history and no per-address lockout, so a patient attacker is only slowed down. The password is sent as plain text over HTTP, so anyone on the network path can read it. The Streamlit server itself also answers its health check (`/_stcore/health`) and static files without a login.
+- **How to use it safely:** keep the port on localhost or a private network such as Tailscale, or put a TLS reverse proxy (Caddy, nginx) in front and bind the app to localhost. Use a long random password (`openssl rand -base64 18`) that you use nowhere else.
+- **When you need more:** accounts or single sign-on need Streamlit's `st.login` with an OpenID Connect provider (Google, Microsoft and so on), or an authenticating proxy; that is not built here.
+- **Editing is separate:** `ADMIN_PASSWORD` still guards manual charge costs, so someone who can read cannot change them.
 
 ### Backups
 

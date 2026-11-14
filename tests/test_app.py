@@ -122,3 +122,25 @@ def test_period_can_be_the_last_day(app):
     assert sel.options[0] == "Last day" and sel.value == 30
     sel.select(1).run()
     assert not at.exception
+
+
+def test_login_page_gates_the_dashboard_when_a_password_is_set(app, monkeypatch):
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "view")
+    at = app.run()
+    assert not at.exception
+    assert len(at.tabs) == 0 and not at.metric and not at.sidebar.selectbox     # nothing of the dashboard
+    at.text_input[0].input("wrong")
+    at.button[0].click().run()
+    assert any("Wrong password" in e.value for e in at.error) and len(at.tabs) == 0
+    at.text_input[0].input("view")
+    at.button[0].click().run()
+    assert not at.exception and len(at.tabs) >= 7
+    sign_out = next(b for b in at.sidebar.button if b.label == "Sign out")
+    sign_out.click().run()
+    assert len(at.tabs) == 0
+
+
+def test_no_login_page_without_a_dashboard_password(app, monkeypatch):
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+    at = app.run()
+    assert len(at.tabs) >= 7 and not [b for b in at.sidebar.button if b.label == "Sign out"]

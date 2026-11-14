@@ -16,6 +16,7 @@ services:
     environment:
       BATTERY_KWH: ${BATTERY_KWH:-78}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}   # from .env; unset = editing off
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD:-}   # from .env; unset = no login page
     # The dashboard has no authentication: bind to the Tailscale IP only.
     ports:
       - "${BIND_ADDR:-127.0.0.1}:8501:8501"

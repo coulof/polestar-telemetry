@@ -54,3 +54,21 @@ def test_a_success_resets_the_failure_count():
     assert admin.unlock({}, "s3cret", now=10) is None
     for i in range(admin.MAX_FAILS - 1):
         assert admin.unlock({}, "nope", now=20 + i) == "Wrong password."
+
+
+def test_viewer_scope_has_its_own_password_and_a_longer_session(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_PASSWORD", "view")
+    st = {}
+    assert admin.configured("viewer") and not admin.unlocked(st, now=0, scope="viewer")
+    assert admin.unlock(st, "s3cret", now=0, scope="viewer") == "Wrong password."     # the admin password is not the viewer one
+    assert admin.unlock(st, "view", now=0, scope="viewer") is None
+    assert admin.unlocked(st, now=admin.VIEWER_SECONDS - 1, scope="viewer")
+    assert not admin.unlocked(st, now=1, scope="admin")                               # viewing does not unlock editing
+    admin.lock(st, scope="viewer")
+    assert not admin.unlocked(st, now=1, scope="viewer")
+
+
+def test_viewer_scope_is_off_without_its_password(monkeypatch):
+    monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
+    assert not admin.configured("viewer")
+    assert "No dashboard password" in admin.unlock({}, "", now=0, scope="viewer")
