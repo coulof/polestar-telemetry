@@ -9,6 +9,7 @@ DEFAULTS = {"interval": 300, "interval_active": 60, "radius_m": 150}
 REPORT_DEFAULTS = {"enabled": True, "timezone": "Europe/Paris", "model": "sonnet"}
 SERVICE_DEFAULTS = {"warn_days": 30, "warn_km": 1500}
 ALERT_DEFAULTS = {"stale_hours": 6}
+AIR_DEFAULTS = {"good": 5, "moderate": 15}   # PM2.5 limits (assumed ug/m3), after the WHO 2021 annual and 24-hour guidelines
 
 
 def load(path=None):
@@ -28,6 +29,7 @@ def load(path=None):
         "co2_g_per_kwh": raw.get("co2", {}).get("g_per_kwh"),
         "service": {**SERVICE_DEFAULTS, **raw.get("service", {})},
         "alerts": {**ALERT_DEFAULTS, **raw.get("alerts", {})},
+        "air": {**AIR_DEFAULTS, **raw.get("air", {})},
         "default_price": raw.get("pricing", {}).get("default_price_per_kwh"),
         "locations": [
             {"radius_m": DEFAULTS["radius_m"], **loc} for loc in raw.get("location", [])
@@ -117,3 +119,10 @@ def service_status(cfg, days, km):
     if (days is not None and days <= soon["warn_days"]) or (km is not None and km <= soon["warn_km"]):
         return "soon"
     return "ok"
+
+
+def air_status(cfg, pm25):
+    """'good' | 'moderate' | 'high' for a PM2.5 reading against the [air] limits; None without a reading."""
+    if pm25 is None or pm25 != pm25:
+        return None
+    return "good" if pm25 <= cfg["air"]["good"] else "moderate" if pm25 <= cfg["air"]["moderate"] else "high"

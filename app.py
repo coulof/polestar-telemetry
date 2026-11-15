@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from polestar import admin, charging, config, costs, derive, insights, report, theme
+from polestar import admin, charging, config, costs, derive, insights, report, theme, views
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
@@ -405,31 +405,43 @@ with tab_air:
               ":material/air:")
     else:
         last = air.iloc[-1]
+        cfg_a = config.load()
+        status = config.air_status(cfg_a, last["pm25"])
         c = st.columns(4)
-        c[0].metric("Air quality index", f"{last['aqi']:.0f}" if pd.notna(last["aqi"]) else "—", border=True,
-                    help="Cabin air quality index reported by the car. The API does not document the scale.")
-        c[1].metric("PM2.5", f"{last['pm25']:.0f}" if pd.notna(last["pm25"]) else "—", border=True,
-                    help="Particulate matter reported by the car. The API does not document the unit.")
+        c[0].metric("PM2.5", f"{last['pm25']:.0f}" if pd.notna(last["pm25"]) else "—", border=True,
+                    delta=f"{views.AIR_LABEL[status]} (limits {cfg_a['air']['good']} and {cfg_a['air']['moderate']})" if status else None,
+                    delta_color={"good": "normal", "moderate": "off", "high": "inverse"}.get(status, "off"),
+                    delta_arrow="off",
+                    help="Fine particles in the cabin. The API does not give the unit; assumed µg/m³. Good, Moderate and High "
+                         "follow the WHO 2021 guideline values and can be changed under [air] in config.toml.")
+        c[1].metric("Car's air index", f"{last['aqi']:.0f}" if pd.notna(last["aqi"]) else "—", border=True,
+                    help="The car's own score. Its scale is undocumented and it tracks PM2.5 (about 1.4 times higher in the "
+                         "stored readings), so it is not judged here.")
         if pd.notna(last["last_cycle"]):
             ago = pd.Timestamp.now(tz=LOCAL_TZ) - last["last_cycle"]
             c[2].metric("Last pre-cleaning", f"{ago.days} d ago" if ago.days else f"{int(ago.total_seconds() // 3600)} h ago",
                         border=True, help=f"{last['last_cycle']:%d %b %H:%M}")
             c[3].metric("Cycle valid", "Yes" if last["cycle_valid"] else "No", border=True)
-        st.caption(f"Last reading {last['time']:%d %b %H:%M}. {len(air)} reading(s) stored.")
+        st.caption(f"Last reading {last['time']:%d %b %H:%M}. {len(air)} reading(s) stored. The car measures only now and then, "
+                   "so these are spot readings, not a continuous record.")
         if len(air_v) < 2:
             empty("Trends appear once a few readings are stored (the car reports after each measurement).",
                   ":material/hourglass_empty:")
         else:
-            for col, title, unit in (("aqi", "Air quality index", "index"), ("pm25", "PM2.5", "")):
-                fig = line_chart(air_v.dropna(subset=[col]), "time", col, title, unit, mode="lines+markers", step=True)
-                if xrange:
-                    fig.update_xaxes(range=xrange)
-                st.plotly_chart(fig, width="stretch")
+            pm = air_v.dropna(subset=["pm25"])
+            fig = line_chart(pm, "time", "pm25", "PM2.5 readings", "PM2.5", mode="markers")
+            fig.update_traces(hovertemplate="%{x|%d %b %H:%M}<br>%{y:.0f} PM2.5<extra></extra>")
+            fig = views.air_bands(fig, cfg_a, float(pm["pm25"].max()))
+            if xrange:
+                fig.update_xaxes(range=xrange)
+            st.plotly_chart(fig, width="stretch")
         daily = derive.air_daily(air_v, LOCAL_TZ)
+        if len(daily) >= 2:
+            st.plotly_chart(views.air_daily_chart(daily, cfg_a), width="stretch")
         if not daily.empty:
             st.subheader("Daily summary")
             st.dataframe(daily.sort_values("date", ascending=False).round(
-                {"aqi_avg": 1, "aqi_max": 0, "pm25_avg": 1, "pm25_max": 0}), hide_index=True, width="stretch")
+                {"aqi_avg": 1, "aqi_max": 0, "pm25_min": 0, "pm25_avg": 1, "pm25_max": 0}), hide_index=True, width="stretch")
         cycles = derive.cleaning_cycles(air)
         if not cycles.empty:
             st.subheader("Pre-cleaning cycles")

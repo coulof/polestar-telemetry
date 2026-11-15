@@ -39,8 +39,36 @@ By default the dashboard listens on `127.0.0.1` only (`BIND_ADDR` changes that).
 - **How to use it safely:** keep the port on localhost or a private network such as Tailscale, or put a TLS reverse proxy (Caddy, nginx) in front and bind the app to localhost. Use a long random password (`openssl rand -base64 18`) that you use nowhere else.
 - **When you need more:** accounts or single sign-on need Streamlit's `st.login` with an OpenID Connect provider (Google, Microsoft and so on), or an authenticating proxy; that is not built here.
 - **Setting it:** add `DASHBOARD_PASSWORD=<value>` to `.env` (keep it mode 600) without typing the value into shell history, for example `read -rsp 'Password: ' p; printf 'DASHBOARD_PASSWORD=%s\n' "$p" >> .env; unset p`, then restart the stack (`systemctl --user restart polestar-telemetry`, or `podman-compose up -d`). The same works for `ADMIN_PASSWORD`.
-- **Storing a hash instead (recommended):** `.env` can hold an Argon2 hash rather than the password. Run `uv run python -m polestar.admin` (or `podman exec -it polestar-telemetry_app_1 python -m polestar.admin`), type the password at the prompt, and put the printed value in `.env` in single quotes: `DASHBOARD_PASSWORD='$argon2id$v=19$...'`. A value that does not start with `$argon2` is compared as plain text, so existing setups keep working. The hash protects the password if `.env` leaks, and it is also slow to guess offline. It does not stop someone who reads `.env` from seeing the hash, and the login still travels unencrypted without TLS or Tailscale. Works for `ADMIN_PASSWORD` too.
+- **Storing a hash instead (recommended):** `.env` can hold an Argon2 hash rather than the password. Run `uv run python -m polestar.admin` (or `podman exec -it polestar-telemetry_app_1 python -m polestar.admin`), type the password at the prompt, and put the printed value in `.env` in single quotes: `DASHBOARD_PASSWORD='$argon2id$v=19$...'`. A value that does not start with `$argon2` is compared as plain text, so existing setups keep working. The hash protects the password if `.env` leaks, and it is also slow to guess offline. It does not stop someone who reads `.env` from seeing the hash, and the login still travels unencrypted without TLS or Tailscale. Works for `ADMIN_PASSWORD` too. Step by step: [Generating an Argon2 hash](#generating-an-argon2-hash).
 - **Editing is separate:** `ADMIN_PASSWORD` still guards manual charge costs, so someone who can read cannot change them.
+
+## Generating an Argon2 hash
+
+There is no separate seed or salt to create: the hash generator picks a random salt and stores it inside the hash, together with the cost settings (`argon2id`, 64 MiB memory, 3 passes). The same password gives a different hash each time, and all of them verify.
+
+1. Make the hash. The prompt does not echo the password:
+
+   ```sh
+   uv run python -m polestar.admin
+   # or, inside the running stack:
+   podman exec -it polestar-telemetry_app_1 python -m polestar.admin
+   ```
+
+   It prints one line starting with `$argon2id$v=19$m=65536,t=3,p=4$`.
+2. Put it in `.env` in single quotes, because the value contains `$`:
+
+   ```sh
+   DASHBOARD_PASSWORD='$argon2id$v=19$m=65536,t=3,p=4$...'
+   ```
+
+   To hash and append in one step without the password or hash ever reaching the terminal history:
+
+   ```sh
+   read -rsp 'Password: ' p; echo; h=$(P="$p" uv run python -c "import os;from polestar.admin import HASHER;print(HASHER.hash(os.environ['P']))"); unset p; printf "DASHBOARD_PASSWORD='%s'\n" "$h" >> .env; unset h
+   ```
+
+   Use `ADMIN_PASSWORD` instead for the admin password. Keep `.env` at mode 600 and do not leave a second, older line for the same variable.
+3. Restart the stack (`systemctl --user restart polestar-telemetry`) and sign in with the original password, not the hash.
 
 ## Stale-data alert
 

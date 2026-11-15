@@ -53,3 +53,9 @@ price_per_kwh = 0.20
 # to = "00:00"
 # days = ["sat", "sun"]
 # price_per_kwh = 0.169
+
+# PM2.5 limits for the Air tab, in the unit the car reports (assumed ug/m3). Defaults follow the WHO 2021 guidelines
+# (5 annual, 15 over 24 hours): up to "good" is Good, up to "moderate" is Moderate, above is High.
+# [air]
+# good = 5
+# moderate = 15

@@ -124,7 +124,7 @@ def test_air_quality_daily_and_cycles():
     assert a["aqi"].tolist() == [2, 4, 3]
     d = derive.air_daily(a)
     assert d["readings"].tolist() == [2, 1]                  # two readings day 1, one day 2
-    assert d.loc[0, "aqi_avg"] == 3 and d.loc[0, "pm25_max"] == 6
+    assert d.loc[0, "aqi_avg"] == 3 and d.loc[0, "pm25_max"] == 6 and d.loc[0, "pm25_min"] == 2
     c = derive.cleaning_cycles(a)
     assert len(c) == 2 and c.loc[0, "completed"] > c.loc[1, "completed"]
 

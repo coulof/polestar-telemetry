@@ -8,7 +8,7 @@
 - **Charging:** sessions with a power curve, energy and cost by location, "could have saved" (peak-rate energy priced at the cheapest rate), a warning when sessions run below the car's amp limit, and the car's charging settings (target charge, amp limit, timers, read-only). If a session's estimated cost is wrong (a different tariff, a fee, a free charge), open "Set the cost manually" under the chart, unlock it with the admin password (15 minutes per browser session, five wrong guesses lock everyone out for a minute) and enter what you paid; it replaces the estimate in the dashboard and in the weekly report, and "Use estimate" brings the estimate back. Corrections are stored in the `session_costs` table, keyed by the session's start time.
 - **Battery:** state of charge over time with charging sessions shaded, and SoC lost while parked.
 - **Insights:** real-world range, energy per full charge, cost per 100 km, optional CO2, a day-by-hour grid of driving and charging, and a monthly table.
-- **Air:** cabin air quality index and PM2.5 over time, a daily summary and pre-cleaning cycles. The API documents neither the index scale nor the PM2.5 unit.
+- **Air:** cabin PM2.5 with Good, Moderate and High bands (limits in `config.toml` under `[air]`), the readings, a daily mean and range chart, and pre-cleaning cycles. The car's own air index is shown but not judged. The API documents neither its scale nor the PM2.5 unit (µg/m³ is assumed), and the car reports only now and then.
 - **Data:** snapshot counts and freshness per domain, and the latest raw payload.
 
 The **Period** selector in the sidebar filters Trips, Charging, Battery, Insights and Air. Now, Report and Data always show the latest.

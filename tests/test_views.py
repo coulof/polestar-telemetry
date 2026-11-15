@@ -23,7 +23,7 @@ def test_chips_locked_closed_service_and_air(cfg):
     health = df(daysToService=200, distanceToServiceKm=9000)
     pre = df(measuredAirQualityIndex=14, measuredParticulateMatter25=4)
     line, warn = views.chips(ext, health, pre, cfg)
-    assert "Locked" in line and "All closed" in line and "Service in 200 d / 9,000 km" in line and "Air quality 14" in line
+    assert "Locked" in line and "All closed" in line and "Service in 200 d / 9,000 km" in line and "Air good" in line and "PM2.5 4" in line
     assert warn is None
 
 

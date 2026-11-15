@@ -304,13 +304,13 @@ def air_quality(pre):
 
 
 def air_daily(air, tz=None):
-    """Per local day: mean/max index and PM2.5, and number of readings."""
-    cols = ["date", "aqi_avg", "aqi_max", "pm25_avg", "pm25_max", "readings"]
+    """Per local day: mean/max index, min/mean/max PM2.5, and number of readings."""
+    cols = ["date", "aqi_avg", "aqi_max", "pm25_min", "pm25_avg", "pm25_max", "readings"]
     if air.empty:
         return pd.DataFrame(columns=cols)
     day = air["time"].dt.tz_convert(tz).dt.date if tz else air["time"].dt.date
     g = air.assign(date=day).groupby("date")
-    out = g.agg(aqi_avg=("aqi", "mean"), aqi_max=("aqi", "max"), pm25_avg=("pm25", "mean"),
+    out = g.agg(aqi_avg=("aqi", "mean"), aqi_max=("aqi", "max"), pm25_min=("pm25", "min"), pm25_avg=("pm25", "mean"),
                 pm25_max=("pm25", "max"), readings=("aqi", "size")).reset_index()
     return out[cols]
 

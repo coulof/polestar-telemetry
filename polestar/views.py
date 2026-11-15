@@ -76,6 +76,38 @@ def activity_grid_chart(grid, first, last):
     return theme.style(fig, max(160, 26 * len(days) + 60), "Driving and charging, by day and hour")
 
 
+AIR_LABEL = {"good": "Good", "moderate": "Moderate", "high": "High"}
+AIR_COLOUR = {"good": "good", "moderate": "high", "high": "low"}      # theme.palette() keys: green, amber, red
+
+
+def air_bands(fig, cfg, top):
+    """Shade the Good / Moderate / High PM2.5 bands behind a chart; `top` is the highest value on the y axis."""
+    p = theme.palette()
+    lim = cfg["air"]
+    for lo, hi, key in ((0, lim["good"], "good"), (lim["good"], lim["moderate"], "moderate"), (lim["moderate"], max(top, lim["moderate"] * 1.2), "high")):
+        fig.add_hrect(y0=lo, y1=hi, fillcolor=rgba(p[AIR_COLOUR[key]], 0.10), line_width=0, layer="below",
+                      annotation_text=AIR_LABEL[key], annotation_position="top left",
+                      annotation_font=dict(size=11, color=p["muted"]))
+    fig.update_yaxes(range=[0, max(top, lim["moderate"] * 1.2)])
+    return fig
+
+
+def air_daily_chart(daily, cfg):
+    """Daily PM2.5: the min-max range as a band, the mean as a line, over the Good / Moderate / High bands."""
+    p = theme.palette()
+    x = [str(d) for d in daily["date"]]
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=daily["pm25_max"], mode="lines", line=dict(width=0), hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=x, y=daily["pm25_min"], mode="lines", line=dict(width=0), fill="tonexty",
+                             fillcolor=rgba(p["series"], 0.25), hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=x, y=daily["pm25_avg"], mode="lines+markers", line=dict(color=p["series"], width=2),
+                             marker=dict(size=7, color=p["series"]), customdata=daily[["pm25_min", "pm25_max"]],
+                             hovertemplate="%{x}<br>mean %{y:.1f}, min %{customdata[0]:.0f}, max %{customdata[1]:.0f}<extra></extra>"))
+    fig.update_layout(yaxis_title="PM2.5 (assumed µg/m³)", hovermode="x unified")
+    fig.update_xaxes(type="category")
+    return air_bands(theme.style(fig, 300, "PM2.5 per day: mean and range"), cfg, float(daily["pm25_max"].max()))
+
+
 def empty(msg, icon=":material/hourglass_empty:"):
     st.info(msg, icon=icon)
 
@@ -105,10 +137,11 @@ def chips(exterior, health, pre, cfg, driving=False):
                     f"Service due in {d:,.0f} days or {km:,.0f} km, whichever comes first"
     if not pre.empty:
         q = pre.iloc[-1]
-        if pd.notna(q.get("measuredAirQualityIndex")):
-            pm = q.get("measuredParticulateMatter25")
-            extra = f" · PM2.5 {pm:.0f}" if pd.notna(pm) else ""
-            out.append(f":blue-badge[:material/air: Air quality {q['measuredAirQualityIndex']:.0f}{extra}]")
+        pm = pd.to_numeric(q.get("measuredParticulateMatter25"), errors="coerce")
+        status = config.air_status(cfg, pm)
+        if status:
+            color = {"good": "green", "moderate": "orange", "high": "red"}[status]
+            out.append(f":{color}-badge[:material/air: Air {AIR_LABEL[status].lower()} · PM2.5 {pm:.0f}]")
     return " ".join(out), warn
 
 
