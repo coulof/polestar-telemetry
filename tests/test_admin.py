@@ -72,3 +72,15 @@ def test_viewer_scope_is_off_without_its_password(monkeypatch):
     monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
     assert not admin.configured("viewer")
     assert "No dashboard password" in admin.unlock({}, "", now=0, scope="viewer")
+
+
+def test_an_argon2_hash_works_in_place_of_the_plain_password(monkeypatch):
+    monkeypatch.setenv("ADMIN_PASSWORD", admin.HASHER.hash("s3cret"))
+    st = {}
+    assert admin.unlock(st, "nope", now=0) == "Wrong password."
+    assert admin.unlock(st, "s3cret", now=1) is None and admin.unlocked(st, now=2)
+
+
+def test_a_malformed_hash_never_unlocks(monkeypatch):
+    monkeypatch.setenv("ADMIN_PASSWORD", "$argon2id$garbage")
+    assert admin.unlock({}, "$argon2id$garbage", now=0) == "Wrong password."

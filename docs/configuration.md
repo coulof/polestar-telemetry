@@ -15,7 +15,7 @@ It gives you three values: Client ID, Client secret and Account ID. They go into
 | `SECRET` | Client secret | API client secret |
 | `ACCOUNT_ID` | Account ID | Sent as the `x-client-id` header (differs from `APP_ID`) |
 | `DASHBOARD_PASSWORD` | | Optional login page for the whole dashboard, see [Access](deployment.md#access-and-the-login-page) |
-| `ADMIN_PASSWORD` | | Optional. Unlocks the few things the dashboard can change (manual charge costs); without it editing is off. Generate one with `openssl rand -base64 18` |
+| `ADMIN_PASSWORD` | | Optional. Unlocks the few things the dashboard can change (manual charge costs); without it editing is off. Generate one with `openssl rand -base64 18`. Both password variables accept an Argon2 hash, see [Access](deployment.md#access-and-the-login-page) |
 
 Optional environment variables: `DB_PATH` (default `data/telemetry.db`), `CONFIG_PATH` (default `config.toml`), `BATTERY_KWH` (usable capacity used for energy estimates, default 78, unverified), `BIND_ADDR` (address the dashboard listens on, default `127.0.0.1`), `CLAUDE_BIN` (path of the `claude` CLI for the weekly report), `NOTIFY_URL` (push failure messages, see [Weekly report](deployment.md#weekly-report-claude-code-cli)), `HEARTBEAT_URL` (Healthchecks.io ping for the [stale-data alert](deployment.md#stale-data-alert)), `BACKUP_DIR` and `KEEP` (where `deploy/backup.sh` writes and how many copies it keeps), `COLLECTOR` (container name the host scripts use), `POLESTAR_MOCK=1` (show the design mock-up tabs on synthetic data).
 
