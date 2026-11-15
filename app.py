@@ -11,7 +11,7 @@ from polestar import admin, charging, config, costs, derive, insights, report, t
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
-from polestar.views import bar_chart, charging_notes, chips, empty, fmt_daily, line_chart, location_map, rgba, soc_gauge, state_timeline
+from polestar.views import activity_grid_chart, bar_chart, charging_notes, chips, empty, fmt_daily, line_chart, location_map, rgba, soc_gauge
 
 st.set_page_config(page_title="Polestar telemetry", page_icon="⚡", layout="wide",
                    initial_sidebar_state="collapsed")
@@ -385,8 +385,10 @@ with tab_ins:
     if seg.empty:
         empty("No state changes in the last 14 days.", ":material/timeline:")
     else:
-        st.plotly_chart(state_timeline(seg), width="stretch")
-        st.caption("Parked and driving come from the car's usage-mode events; they update only when the mode changes.")
+        st.plotly_chart(activity_grid_chart(insights.activity_grid(seg, LOCAL_TZ), window.normalize(), now_local.normalize()),
+                        width="stretch")
+        st.caption("Each cell is one hour: orange when the car was driven, green when it charged, blank when parked. "
+                   "Colour deepens with the minutes. Events arrive only when the mode changes.")
     if not month.empty:
         st.subheader("By month")
         st.dataframe(month.round({"km": 0, "kwh": 1, "cost": 2, "cost_per_100km": 2, "co2_kg": 1, "co2_g_per_km": 0}),

@@ -79,3 +79,24 @@ def state_segments(availability, sessions, now):
     # merge back-to-back segments of the same state
     run = ((df["state"] != df["state"].shift()) | (df["start"] > df["end"].shift())).cumsum()
     return df.groupby(run).agg(start=("start", "min"), end=("end", "max"), state=("state", "first")).reset_index(drop=True)
+
+
+def activity_grid(segments, tz):
+    """Minutes of Driving and Charging per local date and hour: columns date, hour, state, minutes.
+
+    Parked time is left out, so a parked car leaves no cell. An hour with both states keeps the one with more minutes."""
+    cols = ["date", "hour", "state", "minutes"]
+    rows = []
+    for _, s in segments[segments["state"] != "Parked"].iterrows():
+        start, end = s["start"].tz_convert(tz), s["end"].tz_convert(tz)
+        cur = start.floor("h")
+        while cur < end:
+            nxt = cur + pd.Timedelta(hours=1)
+            minutes = (min(end, nxt) - max(start, cur)).total_seconds() / 60
+            if minutes > 0:
+                rows.append((cur.date(), cur.hour, s["state"], minutes))
+            cur = nxt
+    if not rows:
+        return pd.DataFrame(columns=cols)
+    df = pd.DataFrame(rows, columns=cols).groupby(["date", "hour", "state"], as_index=False)["minutes"].sum()
+    return df.sort_values("minutes", ascending=False).drop_duplicates(["date", "hour"]).sort_values(["date", "hour"]).reset_index(drop=True)

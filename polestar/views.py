@@ -5,7 +5,6 @@ import re
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -56,14 +55,25 @@ def soc_gauge(soc):
     return theme.style(fig, 200).update_layout(margin=dict(l=30, r=36, t=10, b=0))
 
 
-def state_timeline(seg):
+def activity_grid_chart(grid, first, last):
+    """One row per local day from `first` to `last`, one column per hour; a cell is coloured only when the car was
+    driven or charging in that hour (parked leaves it blank)."""
     p = theme.palette()
-    colors = {"Driving": p["series"], "Charging": p["good"], "Parked": rgba(p["muted"], 0.45)}
-    fig = px.timeline(seg, x_start="start", x_end="end", y="state", color="state", color_discrete_map=colors,
-                      category_orders={"state": ["Driving", "Charging", "Parked"]})
-    fig.update_yaxes(title=None)
-    fig.update_xaxes(title=None)
-    return theme.style(fig, 220, "Driving, charging and parked time")
+    days = [d.date() for d in pd.date_range(first, last)]
+    fig = go.Figure()
+    for state, colour in (("Driving", p["series"]), ("Charging", p["good"])):
+        g = grid[grid["state"] == state]
+        z = [[None] * 24 for _ in days]
+        for _, r in g.iterrows():
+            if r["date"] in days:
+                z[days.index(r["date"])][int(r["hour"])] = r["minutes"]
+        fig.add_trace(go.Heatmap(
+            z=z, x=list(range(24)), y=[f"{d:%a %d %b}" for d in days], name=state, showscale=False, xgap=1, ygap=2,
+            zmin=0, zmax=60, colorscale=[[0, rgba(colour, 0.45)], [1, colour]], hoverongaps=False,
+            hovertemplate="%{y}, %{x}:00<br>%{z:.0f} min " + state.lower() + "<extra></extra>"))
+    fig.update_xaxes(tickmode="linear", dtick=3, ticksuffix=":00")
+    fig.update_yaxes(autorange="reversed", showgrid=False)
+    return theme.style(fig, max(160, 26 * len(days) + 60), "Driving and charging, by day and hour")
 
 
 def empty(msg, icon=":material/hourglass_empty:"):

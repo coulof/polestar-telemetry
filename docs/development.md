@@ -26,7 +26,7 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 | `polestar/collect.py` | Poll loop, SQLite storage deduped on `metaEventId` |
 | `polestar/config.py` | `config.toml` loading, location matching, tariffs |
 | `polestar/derive.py` | Trips, charge sessions, parked drain, pricing, air quality |
-| `polestar/insights.py` | Real-world range, capacity trend, monthly costs, state timeline |
+| `polestar/insights.py` | Real-world range, capacity trend, monthly costs, activity grid |
 | `polestar/charging.py` | The car's charging settings, plug-state and amp-limit checks |
 | `polestar/stats.py` | Weekly aggregates without VIN or coordinates |
 | `polestar/report.py` | Weekly report: prompt, storage, `claude -p` call |

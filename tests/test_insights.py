@@ -43,3 +43,21 @@ def test_state_segments_merge_and_charging():
     assert by == {"Charging": 1, "Driving": 1, "Parked": 2}   # the two parked events merge, then the last one is separate
     parked = seg[seg.state == "Parked"].sort_values("start")
     assert (parked["end"].iloc[0] - parked["start"].iloc[0]) == pd.Timedelta("20min")
+
+
+def test_activity_grid_splits_hours_and_midnight_and_skips_parked():
+    t = lambda s: pd.Timestamp(s, tz="UTC")
+    seg = pd.DataFrame({"start": [t("2026-05-11 21:50"), t("2026-05-12 08:00"), t("2026-05-12 10:10")],
+                        "end": [t("2026-05-11 22:20"), t("2026-05-12 10:00"), t("2026-05-12 10:40")],
+                        "state": ["Driving", "Parked", "Charging"]})
+    g = insights.activity_grid(seg, "Europe/Paris")        # UTC+2 in May: 23:50-00:20 local, spans midnight
+    rows = {(str(r.date), r.hour, r.state): r.minutes for r in g.itertuples()}
+    assert rows == {("2026-05-11", 23, "Driving"): 10, ("2026-05-12", 0, "Driving"): 20, ("2026-05-12", 12, "Charging"): 30}
+
+
+def test_activity_grid_keeps_the_state_with_more_minutes_and_handles_empty():
+    t = lambda s: pd.Timestamp(s, tz="UTC")
+    seg = pd.DataFrame({"start": [t("2026-05-12 10:00"), t("2026-05-12 10:40")],
+                        "end": [t("2026-05-12 10:40"), t("2026-05-12 10:50")], "state": ["Charging", "Driving"]})
+    assert insights.activity_grid(seg, "UTC")["state"].tolist() == ["Charging"]
+    assert insights.activity_grid(seg.iloc[0:0], "UTC").empty
