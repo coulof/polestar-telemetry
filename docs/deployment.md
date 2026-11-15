@@ -32,43 +32,36 @@ With rootless podman, enable linger (`loginctl enable-linger <user>`) and instal
 
 ## Access and the login page
 
-By default the dashboard listens on `127.0.0.1` only (`BIND_ADDR` changes that). Reaching it from elsewhere means exposing the port, so decide who can see your drives and charging places. `DASHBOARD_PASSWORD` in `.env` adds a login page. Its limits:
+The dashboard listens on `127.0.0.1` only. `BIND_ADDR` changes that, so decide who can see your drives and charging places before you expose it.
 
-- **Scope:** a shared password in front of the whole dashboard. Nothing is read or drawn until it is entered. A session lasts 12 hours, five wrong guesses lock every session for a minute, and an unset password means no login page.
-- **Limits:** there are no user accounts, no per-user history and no per-address lockout, so a patient attacker is only slowed down. The password is sent as plain text over HTTP, so anyone on the network path can read it. The Streamlit server itself also answers its health check (`/_stcore/health`) and static files without a login.
-- **How to use it safely:** keep the port on localhost or a private network such as Tailscale, or put a TLS reverse proxy (Caddy, nginx) in front and bind the app to localhost. Use a long random password (`openssl rand -base64 18`) that you use nowhere else.
-- **When you need more:** accounts or single sign-on need Streamlit's `st.login` with an OpenID Connect provider (Google, Microsoft and so on), or an authenticating proxy; that is not built here.
-- **Setting it:** add `DASHBOARD_PASSWORD=<value>` to `.env` (keep it mode 600) without typing the value into shell history, for example `read -rsp 'Password: ' p; printf 'DASHBOARD_PASSWORD=%s\n' "$p" >> .env; unset p`, then restart the stack (`systemctl --user restart polestar-telemetry`, or `podman-compose up -d`). The same works for `ADMIN_PASSWORD`.
-- **Storing a hash instead (recommended):** `.env` can hold an Argon2 hash rather than the password. Run `uv run python -m polestar.admin` (or `podman exec -it polestar-telemetry_app_1 python -m polestar.admin`), type the password at the prompt, and put the printed value in `.env` in single quotes: `DASHBOARD_PASSWORD='$argon2id$v=19$...'`. A value that does not start with `$argon2` is compared as plain text, so existing setups keep working. The hash protects the password if `.env` leaks, and it is also slow to guess offline. It does not stop someone who reads `.env` from seeing the hash, and the login still travels unencrypted without TLS or Tailscale. Works for `ADMIN_PASSWORD` too. Step by step: [Generating an Argon2 hash](#generating-an-argon2-hash).
-- **Editing is separate:** `ADMIN_PASSWORD` still guards manual charge costs, so someone who can read cannot change them.
-
-## Generating an Argon2 hash
-
-There is no separate seed or salt to create: the hash generator picks a random salt and stores it inside the hash, together with the cost settings (`argon2id`, 64 MiB memory, 3 passes). The same password gives a different hash each time, and all of them verify.
-
-1. Make the hash. The prompt does not echo the password:
-
-   ```sh
-   uv run python -m polestar.admin
-   # or, inside the running stack:
-   podman exec -it polestar-telemetry_app_1 python -m polestar.admin
-   ```
-
-   It prints one line starting with `$argon2id$v=19$m=65536,t=3,p=4$`.
-2. Put it in `.env` in single quotes, because the value contains `$`:
-
-   ```sh
-   DASHBOARD_PASSWORD='$argon2id$v=19$m=65536,t=3,p=4$...'
-   ```
-
-   To hash and append in one step without the password or hash ever reaching the terminal history:
-
-   ```sh
-   read -rsp 'Password: ' p; echo; h=$(P="$p" uv run python -c "import os;from polestar.admin import HASHER;print(HASHER.hash(os.environ['P']))"); unset p; printf "DASHBOARD_PASSWORD='%s'\n" "$h" >> .env; unset h
-   ```
-
-   Use `ADMIN_PASSWORD` instead for the admin password. Keep `.env` at mode 600 and do not leave a second, older line for the same variable.
-3. Restart the stack (`systemctl --user restart polestar-telemetry`) and sign in with the original password, not the hash.
+- **Add a login (optional):** `DASHBOARD_PASSWORD` puts one shared password in front of the whole dashboard. Unset means no login page.
+  - **Hash the password** (recommended). Argon2 hashes the password with a random salt that is stored inside the hash, so there is no salt to create. The prompt does not echo:
+    ```sh
+    uv run python -m polestar.admin
+    ```
+    Inside the running stack instead: `podman exec -it polestar-telemetry_app_1 python -m polestar.admin`
+  - **Put it in `.env`**, in single quotes because the hash contains `$`:
+    ```sh
+    DASHBOARD_PASSWORD='$argon2id$v=19$m=65536,t=3,p=4$...'
+    ```
+  - **Or hash and append in one step**, so neither the password nor the hash reaches your shell history:
+    ```sh
+    read -rsp 'Password: ' p; echo; h=$(P="$p" uv run python -c "import os;from polestar.admin import HASHER;print(HASHER.hash(os.environ['P']))"); unset p; printf "DASHBOARD_PASSWORD='%s'\n" "$h" >> .env; unset h
+    ```
+  - **Restart, then sign in with the original password** (not the hash):
+    ```sh
+    systemctl --user restart polestar-telemetry
+    ```
+  - A plain-text value also works: anything not starting with `$argon2` is compared as is. `openssl rand -base64 18` makes a good one.
+- **Admin password:** `ADMIN_PASSWORD` guards manual charge costs, so someone who can read cannot change them. It takes the same plain or Argon2 value, and the same steps with that name.
+- **`.env` hygiene:** keep it at mode 600 and keep one line per variable. A second, older line is a second valid credential.
+- **Behaviour:** nothing is read or drawn before sign-in. A session lasts 12 hours (admin: 15 minutes), and five wrong guesses lock every session for a minute.
+- **Limits:**
+  - No user accounts, no per-address lockout: a patient attacker is only slowed down.
+  - The hash protects the password if `.env` leaks. It does not encrypt the login: over plain HTTP the password can be read on the network path.
+  - `/_stcore/health` and static files answer without a login.
+- **Use it safely:** keep the port on localhost or a private network such as Tailscale, or put a TLS reverse proxy (Caddy, nginx) in front and bind the app to localhost. Use a password you use nowhere else.
+- **Need accounts or single sign-on?** Not built. It needs Streamlit's `st.login` with an OpenID Connect provider, or an authenticating proxy.
 
 ## Stale-data alert
 
