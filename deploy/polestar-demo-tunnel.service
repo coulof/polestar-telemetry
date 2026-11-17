@@ -8,6 +8,8 @@ After=network-online.target polestar-demo.service
 
 [Service]
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# Not $HOME: wrangler would create ~/.wrangler there, which it then prefers over ~/.config/.wrangler (where the login is)
+WorkingDirectory=%h/.cache
 ExecStart=/usr/bin/npx --yes wrangler tunnel run 652adbb9-3791-462f-b856-c33a037c292a
 Restart=on-failure
 RestartSec=30
