@@ -2,6 +2,8 @@
 
 Collect, store and understand your Polestar 2 usage: trips, charging, battery, cabin air and a weekly written summary, in a small self-hosted dashboard.
 
+**[Live demo](https://polestar.lafabrique.ai/)**: the real dashboard on a synthetic car and made-up places, with the clock frozen.
+
 The [Polestar Data Portal API](api.json) only returns the **current state** of the car. It has no history and no trips. This app polls it, keeps every snapshot in SQLite, derives trips and charge sessions from those snapshots, and shows them in a Streamlit dashboard.
 
 <p align="center"><img src="docs/img/tour.gif" alt="Tour of the dashboard: Now, Report, Trips, Charging, Battery" width="720"></p>
