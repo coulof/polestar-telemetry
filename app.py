@@ -16,6 +16,9 @@ from polestar.views import activity_grid_chart, bar_chart, charging_notes, chips
 st.set_page_config(page_title="Polestar telemetry", page_icon="⚡", layout="wide",
                    initial_sidebar_state="collapsed")
 st.markdown(theme.CSS, unsafe_allow_html=True)
+if os.environ.get("POLESTAR_DEMO") == "1":   # public demo (demo/Dockerfile): link back to the project
+    st.markdown(theme.demo_ribbon(os.environ.get("POLESTAR_DEMO_URL", "https://github.com/coulof/polestar-telemetry#quick-start")),
+                unsafe_allow_html=True)
 
 # Optional login (DASHBOARD_PASSWORD): nothing below runs, so no data is read, until the password is right.
 if admin.configured("viewer") and not admin.unlocked(st.session_state, scope="viewer"):

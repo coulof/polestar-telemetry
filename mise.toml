@@ -84,3 +84,24 @@ cp deploy/polestar-report.timer "$unit/"
 systemctl --user daemon-reload && systemctl --user enable --now polestar-report.timer
 echo "weekly report timer enabled; run it now with: deploy/weekly-report.sh"
 """
+
+# Public demo (demo/compose.yml): real dashboard on synthetic data with a frozen clock, behind a Cloudflare Tunnel run on the host
+[tasks."demo:build"]
+description = "Build the demo image (synthetic database, frozen clock)"
+run = "podman build -f demo/Dockerfile -t polestar-demo ."
+
+[tasks."demo:up"]
+description = "Start the demo container (127.0.0.1:8599)"
+run = "podman-compose -f demo/compose.yml up -d --build"
+
+[tasks."demo:down"]
+description = "Stop the demo container"
+run = "podman-compose -f demo/compose.yml down"
+
+[tasks."demo:logs"]
+description = "Follow the demo logs"
+run = "podman-compose -f demo/compose.yml logs -f"
+
+[tasks."demo:tunnel"]
+description = "Run the Cloudflare Tunnel polestar-demo on the host (ingress is set in the Zero Trust dashboard)"
+run = "npx wrangler tunnel run 652adbb9-3791-462f-b856-c33a037c292a"

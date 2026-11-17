@@ -43,3 +43,15 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 | `LICENSE` | MIT |
 | `smoke.py` | Credential and endpoint check |
 | `tests/` | pytest suite (no network, no real `claude`), including a headless dashboard run and the host scripts against fake `podman` and `claude` |
+
+## Public demo
+
+`demo/Dockerfile` builds the real dashboard on the synthetic database from `demo/make_demo_db.py`, with the clock frozen by libfaketime (`DEMO_NOW`, default 2026-11-17 12:00 UTC; wall time frozen, monotonic time real) so the "now" state never goes stale. The image sets `POLESTAR_DEMO=1`, which shows a ribbon linking to the GitHub quick start (`POLESTAR_DEMO_URL` overrides the link). The image holds no real data or secrets and leaves `ADMIN_PASSWORD` and `DASHBOARD_PASSWORD` unset (editing off). The root filesystem is read-only; the database is copied to a tmpfs `/tmp` at start.
+
+```sh
+mise run demo:build     # image only
+mise run demo:up        # the container on http://127.0.0.1:8599
+mise run demo:tunnel    # Cloudflare Tunnel on the host (wrangler tunnel run, uses your wrangler login)
+```
+
+To publish at `polestar.lafabrique.ai`: create the tunnel once (`npx wrangler tunnel create polestar-demo`), add the public hostname in Cloudflare Zero Trust (Networks, Tunnels) with service `http://127.0.0.1:8599`, and put the tunnel's ID in the `demo:tunnel` task and in `deploy/polestar-demo-tunnel.service`. For boot persistence install `deploy/polestar-demo.service` and `deploy/polestar-demo-tunnel.service` like the other user units. Consider a rate-limiting rule on the hostname.

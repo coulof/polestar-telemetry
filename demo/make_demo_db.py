@@ -3,6 +3,7 @@
     uv run python demo/make_demo_db.py data/demo.db          # then: DB_PATH=data/demo.db CONFIG_PATH=demo/config.toml mise run app
 
 The last event is a charging session in progress at the office car park, ending a few minutes before now."""
+import datetime as dt
 import random
 import sys
 import time
@@ -11,6 +12,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from polestar import report, stats  # noqa: E402
 from polestar.collect import connect, store  # noqa: E402
 
 TZ = ZoneInfo("Europe/Stockholm")
@@ -150,6 +152,38 @@ def build(now):
     return car.ev
 
 
+def sample_report(w):
+    """A hand-written stand-in for the weekly Claude report, filled with the week's own (synthetic) figures."""
+    d, pd_, c, pc, b = w["driving"], w["previous_week_driving"], w["charging"], w["previous_week_charging"], w["battery"]
+    delta = d["km"] - pd_["km"]
+    loc = max(c["by_location"], key=lambda x: x["kwh"]) if c["by_location"] else None
+    bullets = [
+        f"**{d['trips']} trips, {d['km']:.0f} km**, {'up' if delta >= 0 else 'down'} {abs(delta):.0f} km on last week's {pd_['km']:.0f}. "
+        f"The longest single drive was {d['longest_trip_km']:.0f} km, so the week was mostly short hops.",
+        f"**Consumption of about {d['kwh_per_100km_estimated']:.1f} kWh/100 km** (estimated), at an average {d['avg_speed_kmh']:.0f} km/h: "
+        "city driving, where the car is at its most frugal.",
+        f"**{c['sessions']} charging sessions for {c['kwh']:.0f} kWh and €{c['cost_eur']:.2f}**"
+        + (f", most of it at {loc['name']} ({loc['kwh']:.0f} kWh)." if loc else ".")
+        + (f" Last week: {pc['sessions']} sessions, €{pc['cost_eur']:.2f}." if pc["cost_eur"] is not None else ""),
+    ]
+    if c.get("potential_saving_eur"):
+        bullets.append(f"**Shifting peak-rate charging to the cheapest window would have saved about €{c['potential_saving_eur']:.2f}.** "
+                       "Small money, but free to take.")
+    if b["soc_min_pct"] is not None:
+        bullets.append(f"The battery stayed between **{b['soc_min_pct']:.0f} % and {b['soc_max_pct']:.0f} %**, the range it is happiest in.")
+    return (f"## {d['km']:.0f} km of calm commuting, charged cheaply\n\n" + "\n".join(f"- {x}" for x in bullets)
+            + "\n\nWorth watching: nothing alarming. This is a sample report with made-up figures, written by hand for the demo.")
+
+
+def add_reports(db, now):
+    """Store a sample report for each of the last two full weeks (the Report tab's week picker)."""
+    for back in (0, 7):
+        wid = stats.last_full_week(now - dt.timedelta(days=back))
+        w = stats.weekly(db, wid)
+        if w["driving"]["trips"] and w["charging"]["sessions"] and w["charging"]["cost_eur"] is not None:
+            report.store(db, wid, sample_report(w), w, "hand-written sample")
+
+
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "data/demo.db"
     Path(path).unlink(missing_ok=True)
@@ -158,6 +192,7 @@ def main():
     for ts, domain, payload in events:
         store(db, VIN, domain, payload)
     db.commit()
+    add_reports(db, dt.datetime.now(TZ))
     print(f"{len(events)} synthetic events written to {path}")
 
 

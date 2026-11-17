@@ -47,6 +47,10 @@ h1 { font-weight: 650; }
 [data-testid="stMetricLabel"], .pt-sub { text-transform: uppercase; letter-spacing: .06em; font-size: .7rem !important; }
 [data-testid="stMetricValue"] { font-size: 1.75rem; }
 [data-testid="stExpander"] details { border-left-width: 0 !important; border-right-width: 0 !important; border-bottom-width: 0 !important; border-top-color: rgba(128,130,134,.4) !important; }
+/* public demo ribbon (POLESTAR_DEMO=1): a slim full-width bar above the title */
+.demo-ribbon { display: block; padding: .6rem 1rem !important; margin: .7rem 0 1rem; color: #000 !important; text-decoration: none !important;
+  font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; line-height: 1.4; }
+.demo-ribbon:hover span { text-decoration: underline; }
 </style>
 """
 
@@ -68,6 +72,12 @@ def chip(text, on, color="green"):
         bg, fg = ("rgba(200,201,199,.15)", "#C8C9C7") if is_dark() else ("rgba(83,86,90,.10)", "#53565A")
     return (f'<span class="pt-chip{" on" if on else ""}" style="background:{bg};color:{fg}">'
             f'<span class="pt-dot"></span>{html.escape(str(text))}</span>')
+
+
+def demo_ribbon(url):
+    """HTML for the public demo's ribbon: an accent bar linking to the quick start."""
+    return (f'<a class="demo-ribbon" href="{html.escape(url, quote=True)}" target="_blank" rel="noopener" '
+            f'style="background:{palette()["series"]}"><span>Live demo on synthetic data. Run it yourself: Quick start on GitHub \u2192</span></a>')
 
 
 def palette():

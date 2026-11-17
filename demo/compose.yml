@@ -1,0 +1,17 @@
+# Public demo: real dashboard, synthetic data, frozen clock. Published by a Cloudflare Tunnel that runs on the host
+# (`mise run demo:tunnel`, ingress polestar.lafabrique.ai -> http://127.0.0.1:8599 set in the Zero Trust dashboard).
+#   podman-compose -f demo/compose.yml up -d --build      (from the repo root; or: mise run demo:up)
+# Nothing here mounts the real volume, .env or config.toml.
+services:
+  demo:
+    build:
+      context: ..
+      dockerfile: demo/Dockerfile
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 1g
+    cpus: 1
+    ports:
+      - "127.0.0.1:8599:8501"   # the host tunnel connects here
+    restart: unless-stopped
+

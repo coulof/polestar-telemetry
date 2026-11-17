@@ -51,6 +51,15 @@ def test_mock_tabs_only_with_the_mock_flag(app, monkeypatch):
     assert [t.label for t in at.tabs][8:] == ["Compare (mock)", "Path (mock)"]
 
 
+def test_demo_ribbon_only_in_the_demo(app, monkeypatch):
+    monkeypatch.delenv("POLESTAR_DEMO", raising=False)
+    assert not any('class="demo-ribbon"' in m.value for m in app.run().markdown)
+    monkeypatch.setenv("POLESTAR_DEMO", "1")
+    at = app.run()
+    assert not at.exception
+    assert any('class="demo-ribbon"' in m.value and "#quick-start" in m.value for m in at.markdown)
+
+
 def test_battery_capacity_is_per_session_not_a_module_global(app):
     default = derive.BATTERY_KWH
     at = app.run()

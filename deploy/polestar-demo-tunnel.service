@@ -1,0 +1,16 @@
+# systemd *user* unit: Cloudflare Tunnel for the public demo (polestar.lafabrique.ai -> http://127.0.0.1:8599).
+# Uses the wrangler login of this user (`npx wrangler login --device`); the ingress rule lives in the Zero Trust dashboard.
+# Install: cp to ~/.config/systemd/user/ && systemctl --user daemon-reload && systemctl --user enable --now polestar-demo-tunnel
+[Unit]
+Description=Polestar demo Cloudflare Tunnel
+Wants=network-online.target polestar-demo.service
+After=network-online.target polestar-demo.service
+
+[Service]
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/npx --yes wrangler tunnel run 652adbb9-3791-462f-b856-c33a037c292a
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target
