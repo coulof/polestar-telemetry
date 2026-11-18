@@ -6,7 +6,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from demo import make_demo_db
-from polestar import admin, collect, costs, derive, report
+from polestar import admin, collect, costs, derive, place_labels, report
 
 
 @pytest.fixture(scope="module")
@@ -153,3 +153,23 @@ def test_no_login_page_without_a_dashboard_password(app, monkeypatch):
     monkeypatch.delenv("DASHBOARD_PASSWORD", raising=False)
     at = app.run()
     assert len(at.tabs) >= 7 and not [b for b in at.sidebar.button if b.label == "Sign out"]
+
+
+def test_place_labels_need_the_admin_password_then_can_be_set_and_removed(app, demo_db):
+    at = app.run()
+    assert not [b for b in at.button if b.label == "Save label"]                  # locked
+    at = unlock(at)
+    assert not at.exception
+    pick = at.selectbox(key="path_label_pick")
+    auto = pick.options[0]
+    assert auto.startswith("Place ")
+    next(t for t in at.text_input if t.label == "Label").set_value("Gym")
+    next(b for b in at.button if b.label == "Save label").click().run()
+    assert not at.exception
+    with collect.connect(demo_db) as db:
+        assert list(place_labels.load(db).values()) == ["Gym"]
+    assert any(o.startswith("Gym (") for o in at.selectbox(key="path_label_pick").options)     # the label replaced the automatic name
+    next(b for b in at.button if b.label == "Remove label").click().run()
+    assert not at.exception
+    with collect.connect(demo_db) as db:
+        assert place_labels.load(db) == {}

@@ -53,7 +53,7 @@ The dashboard listens on `127.0.0.1` only. `BIND_ADDR` changes that, so decide w
     systemctl --user restart polestar-telemetry
     ```
   - A plain-text value also works: anything not starting with `$argon2` is compared as is. `openssl rand -base64 18` makes a good one.
-- **Admin password:** `ADMIN_PASSWORD` guards manual charge costs, so someone who can read cannot change them. It takes the same plain or Argon2 value, and the same steps with that name.
+- **Admin password:** `ADMIN_PASSWORD` guards manual charge costs and place labels on the Path tab, so someone who can read cannot change them. It takes the same plain or Argon2 value, and the same steps with that name.
 - **`.env` hygiene:** keep it at mode 600 and keep one line per variable. A second, older line is a second valid credential.
 - **Behaviour:** nothing is read or drawn before sign-in. A session lasts 12 hours (admin: 15 minutes), and five wrong guesses lock every session for a minute.
 - **Limits:**

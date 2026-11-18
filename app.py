@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from polestar import admin, charging, config, costs, derive, insights, path, report, theme, views
+from polestar import admin, charging, config, costs, derive, insights, path, place_labels, report, theme, views
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
@@ -260,7 +260,7 @@ with tab_charge:
         s = sessions.loc[pick]
         cw = battery[(battery["time"] >= s["start"]) & (battery["time"] <= s["end"])].copy()
         cw["kw"] = pd.to_numeric(cw.get("chargingPowerWatts"), errors="coerce") / 1000
-        st.plotly_chart(line_chart(cw, "time", "kw", "Charging power", "kW", mode="lines+markers", step=True),
+        st.plotly_chart(line_chart(cw, "time", "kw", "Charging power", "kW", step=True).update_yaxes(rangemode="tozero"),
                         width="stretch")
         place = s["location"] if isinstance(s["location"], str) else "unpriced location"
         cost = ("cost unknown" if pd.isna(s["cost"]) else f"€{s['cost']:.2f} (entered manually)" if s["manual"]
@@ -377,8 +377,10 @@ with tab_ins:
         c[3].metric("CO2", f"{g:.0f} g/km" if pd.notna(g) else "—", border=True,
                     help=f"Charged energy x {cfg_i['co2_g_per_kwh']} g/kWh, per km driven (latest month).")
     if len(cap):
-        st.plotly_chart(line_chart(cap, "start", "capacity_kwh", "Energy per full charge, by session", "kWh",
-                                   mode="lines+markers"), width="stretch")
+        fig = line_chart(cap, "start", "capacity_kwh", "Energy per full charge, by session", "kWh", mode="markers")
+        fig.add_hline(y=battery_kwh(), line=dict(color=theme.palette()["baseline"], width=1, dash="dot"),
+                      annotation_text="usable battery", annotation_font_color=theme.palette()["muted"])
+        st.plotly_chart(fig, width="stretch")   # independent sessions: dots, not a line
     else:
         empty("Capacity estimates need a charge session that adds at least 10 % of SoC.", ":material/battery_charging_full:")
     window = now_local - pd.Timedelta(days=min(period_days or 14, 14))
@@ -399,7 +401,9 @@ with tab_ins:
 
 # ---- path ----------------------------------------------------------------
 with tab_path:
-    path.render(trip_table, location, config.load(), period_days, LOCAL_TZ)
+    with closing(connect(DB_PATH)) as ldb:
+        saved_labels = place_labels.load(ldb)
+    path.render(trip_table, location, config.load(), period_days, LOCAL_TZ, saved_labels, DB_PATH)
 
 # ---- air quality ---------------------------------------------------------
 with tab_air:

@@ -6,13 +6,15 @@ started and where it parked. The trail is therefore gentle curves between stops,
 Places are the parked positions, named after the locations in config.toml when they fall inside one, and
 otherwise grouped into "Place 1", "Place 2" and so on."""
 import math
+from contextlib import closing
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from . import theme
+from . import admin, place_labels, theme
+from .collect import connect
 from .views import empty
 
 CLUSTER_M = 150          # parked positions closer than this (and outside any configured location) are one place
@@ -26,13 +28,19 @@ def haversine_m(lat1, lon1, lat2, lon2):
     return 6371000 * 2 * math.asin(math.sqrt(h))
 
 
-def label_positions(location, cfg):
-    """Name every parked position. Returns (positions, places): `positions` has time, lat, lon and place per
-    reading, `places` maps a place name to its (lat, lon). A configured location wins; the rest are grouped
-    greedily within CLUSTER_M and numbered by how often the car was seen there."""
+def seed_key(lat, lon):
+    return f"{lat:.4f},{lon:.4f}"
+
+
+def label_positions(location, cfg, saved=None):
+    """Name every parked position. Returns (positions, places, seeds): `positions` has time, lat, lon and place per
+    reading, `places` maps a place name to its (lat, lon), `seeds` maps the name of each grouped place to its seed key
+    (what a saved label is stored under). A configured location wins; the rest are grouped greedily within CLUSTER_M
+    and numbered by how often the car was seen there, unless `saved` ({seed key: label}) names them."""
+    saved = saved or {}
     cols = ["time", "lat", "lon", "place"]
     if location.empty or "coordinate.latitude" not in location:
-        return pd.DataFrame(columns=cols), {}
+        return pd.DataFrame(columns=cols), {}, {}
     pos = location.dropna(subset=["coordinate.latitude", "coordinate.longitude"]).sort_values("time")
     pos = pos.rename(columns={"coordinate.latitude": "lat", "coordinate.longitude": "lon"})[["time", "lat", "lon"]]
     named = cfg.get("locations", [])
@@ -48,14 +56,23 @@ def label_positions(location, cfg):
                 labels.append(("cluster", i))
                 break
         else:
-            clusters.append([r.lat, r.lon, 1])
+            clusters.append([r.lat, r.lon, 1, seed_key(r.lat, r.lon)])
             labels.append(("cluster", len(clusters) - 1))
     order = sorted(range(len(clusters)), key=lambda i: -clusters[i][2])
-    names = {i: f"Place {n + 1}" for n, i in enumerate(order)}
+    used = {x["name"] for x in named}
+    names = {}
+    for n, i in enumerate(order):
+        base = saved.get(clusters[i][3]) or f"Place {n + 1}"
+        name, k = base, 2
+        while name in used:                                        # a label never merges two places
+            name, k = f"{base} ({k})", k + 1
+        used.add(name)
+        names[i] = name
     pos = pos.assign(place=[v if kind == "named" else names[v] for kind, v in labels]).reset_index(drop=True)
     places = {x["name"]: (x["lat"], x["lon"]) for x in named if x["name"] in set(pos["place"])}
     places.update({names[i]: (c[0] / c[2], c[1] / c[2]) for i, c in enumerate(clusters)})
-    return pos, places
+    seeds = {names[i]: c[3] for i, c in enumerate(clusters)}
+    return pos, places, seeds
 
 
 def stops(trips, positions):
@@ -199,9 +216,15 @@ def trail_figure(places, trips, days, zoom="Follow"):
     return theme.style(fig, 600).update_layout(showlegend=True, margin=dict(l=0, r=0, t=0, b=64))
 
 
-def timeline_figure(trips, now, days=7):
-    p = theme.palette()
+def window_start(now, days, first_seen=None):
+    """Start of the last `days` calendar days, never before the first data (no stay is counted before tracking began)."""
     start = (pd.Timestamp(now) - pd.DateOffset(days=days)).normalize()
+    return start if first_seen is None else max(start, pd.Timestamp(first_seen).tz_convert(start.tz))
+
+
+def timeline_figure(trips, now, days=7, first_seen=None):
+    p = theme.palette()
+    start = window_start(now, days, first_seen)
     df = stays(trips[trips["end"] >= start], start, pd.Timestamp(now))
     order = ["Driving"] + sorted(set(df["row"]) - {"Driving"})
     fig = px.timeline(df, x_start="start", x_end="end", y="row", color="kind", category_orders={"row": order},
@@ -211,8 +234,8 @@ def timeline_figure(trips, now, days=7):
     return theme.style(fig, 300, f"Where the car was, last {days} days").update_layout(showlegend=False)
 
 
-def places_table(trips, now, days):
-    start = (pd.Timestamp(now) - pd.DateOffset(days=days)).normalize()
+def places_table(trips, now, days, first_seen=None):
+    start = window_start(now, days, first_seen)
     df = stays(trips[trips["end"] >= start], start, pd.Timestamp(now))
     df = df[df["kind"] == "Stay"].assign(hours=lambda d: (d["end"] - d["start"]).dt.total_seconds() / 3600)
     arrivals = trips[trips["end"] >= start].groupby("to").agg(arrivals=("km", "size"), km_in=("km", "sum"))
@@ -229,9 +252,51 @@ def day_range(first, today, n):
     return list(pd.date_range(max(today - pd.DateOffset(days=n - 1), first), today, freq="D"))
 
 
-def render(trip_table, location, cfg, period_days, tz):
-    """The Path tab. `trip_table` is derive.trips() (times in the display zone), `location` the position snapshots."""
-    positions, places = label_positions(location, cfg)
+def edit_labels(seeds, saved, arrivals, db_path):
+    """Name a grouped place, behind the admin password (the same session unlock as the manual charge costs)."""
+    if not seeds:
+        st.caption("Every place already has a name from config.toml.")
+    elif not admin.configured():
+        st.caption(":material/lock: Editing is off. Set `ADMIN_PASSWORD` in `.env` and restart to enable it.")
+    elif not admin.unlocked(st.session_state):
+        with st.form("admin_unlock_path", clear_on_submit=True, border=False):
+            pw = st.text_input("Admin password", type="password", key="admin_pw_path")
+            if st.form_submit_button("Unlock"):
+                problem = admin.unlock(st.session_state, pw)
+                if problem:
+                    st.error(problem)
+                else:
+                    st.rerun()
+    else:
+        name = st.selectbox("Place", list(seeds), key="path_label_pick",
+                            format_func=lambda n: f"{n} ({int(arrivals.get(n, 0))} arrivals)")
+        seed = seeds[name]
+        c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
+        text = c1.text_input("Label", value=saved.get(seed, ""), key=f"path_label_{seed}", max_chars=place_labels.MAX_LEN,
+                             help="A name for this place, such as Gym or Parents. It replaces the automatic name here.")
+        if c2.button("Save label", key="path_label_save", width="stretch") and admin.unlocked(st.session_state):
+            try:
+                with closing(connect(db_path)) as wdb:
+                    place_labels.set_label(wdb, seed, text)
+            except ValueError as e:
+                st.error(str(e))
+            else:
+                st.rerun()
+        if c3.button("Remove label", key="path_label_clear", width="stretch", disabled=seed not in saved) and admin.unlocked(st.session_state):
+            with closing(connect(db_path)) as wdb:
+                place_labels.clear(wdb, seed)
+            st.session_state.pop(f"path_label_{seed}", None)
+            st.rerun()
+        if st.button("Lock", key="admin_lock_path", type="tertiary"):
+            admin.lock(st.session_state)
+            st.rerun()
+
+
+def render(trip_table, location, cfg, period_days, tz, saved=None, db_path=None):
+    """The Path tab. `trip_table` is derive.trips() (times in the display zone), `location` the position snapshots,
+    `saved` the place labels ({seed key: label}) and `db_path` where a new label is written."""
+    saved = saved or {}
+    positions, places, seeds = label_positions(location, cfg, saved)
     if not places or trip_table.empty:
         empty("No path yet: a stop appears once the car has driven and then parked with a reported position.",
               ":material/route:")
@@ -241,6 +306,7 @@ def render(trip_table, location, cfg, period_days, tz):
     trips = trips[trips["start"] <= now].reset_index(drop=True)
     today = now.normalize()
     first = trips["start"].min().normalize()
+    first_seen = min(positions["time"].min(), trips["start"].min())
     n = min(period_days or MAX_DAYS, MAX_DAYS)
     days = day_range(first, today, n)
     span = (today - first).days + 1
@@ -254,11 +320,13 @@ def render(trip_table, location, cfg, period_days, tz):
     st.subheader("Path")
     st.plotly_chart(trail_figure(places, in_span, days, zoom), width="stretch", config={"displayModeBar": False})
     st.caption("Press Play or drag the day slider: the map jumps to that day's start and destination. Orange: that day. "
-               "Dark grey: the 7 days before. Light grey: older. Lines are gentle curves between stops: the car does not "
+               "Grey: the 7 days before. Faint grey: older. Lines are gentle curves between stops: the car does not "
                "report its route, only where it parks."
                + (f" {unlinked} of {len(in_span)} trips have no drawable line (no position reported at one end, or a round trip)." if unlinked else ""))
 
     st.subheader("Timeline")
-    st.plotly_chart(timeline_figure(trips, now), width="stretch", config={"displayModeBar": False})
+    st.plotly_chart(timeline_figure(trips, now, first_seen=first_seen), width="stretch", config={"displayModeBar": False})
     st.subheader("Places")
-    st.dataframe(places_table(trips, now, n), hide_index=True, width="stretch")
+    st.dataframe(places_table(trips, now, n, first_seen), hide_index=True, width="stretch")
+    with st.expander("Name a place"):
+        edit_labels(seeds, saved, trips["to"].value_counts(), db_path)

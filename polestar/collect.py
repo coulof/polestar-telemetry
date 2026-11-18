@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS session_costs (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS place_labels (
+    seed TEXT PRIMARY KEY,          -- the first parked position of a place, "lat,lon" rounded to 4 decimals
+    label TEXT NOT NULL,            -- the name shown on the Path tab
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS poll_status (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_ok REAL NOT NULL           -- epoch seconds of the last poll that fetched data from the API

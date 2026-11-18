@@ -36,6 +36,8 @@ h1 { font-weight: 650; }
     min-width: calc(50% - 1rem) !important; flex: 1 1 calc(50% - 1rem) !important;
   }
 }
+/* touch screens keep Plotly's toolbar always visible, on top of the chart titles: hide it there */
+@media (hover: none) { .js-plotly-plot .modebar-container { display: none !important; } }
 /* Sharp, flat look: square corners, hairlines instead of boxes, tracked small caps labels.
    Bordered containers and metrics keep only a top hairline; unbordered ones have no border width, so they stay clean. */
 * { border-radius: 0 !important; }
