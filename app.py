@@ -379,7 +379,7 @@ with tab_ins:
     if len(cap):
         fig = line_chart(cap, "start", "capacity_kwh", "Energy per full charge, by session", "kWh", mode="markers")
         fig.add_hline(y=battery_kwh(), line=dict(color=theme.palette()["baseline"], width=1, dash="dot"),
-                      annotation_text="usable battery", annotation_font_color=theme.palette()["muted"])
+                      annotation_text="usable battery", annotation_position="bottom right", annotation_font_color=theme.palette()["muted"])
         st.plotly_chart(fig, width="stretch")   # independent sessions: dots, not a line
     else:
         empty("Capacity estimates need a charge session that adds at least 10 % of SoC.", ":material/battery_charging_full:")
