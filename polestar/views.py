@@ -50,6 +50,48 @@ def bar_chart(df, x, y, title, ytitle, height=300, xrange=None):
     return day_axis(theme.style(fig, height, title), days, xrange)
 
 
+def trip_line(t):
+    """One trip for a tooltip: start time, places when known, distance, duration and the energy estimate."""
+    where = f" {t['frm']} → {t['to']}" if isinstance(t.get("frm"), str) and isinstance(t.get("to"), str) else ""
+    kwh = f" · ~{t['kwh']:.1f} kWh" if pd.notna(t.get("kwh")) else ""
+    return f"{t['start']:%H:%M}{where} · {t['km']:.0f} km · {t['minutes']:.0f} min{kwh}"
+
+
+def distance_chart(trips, xrange=None, height=300):
+    """Distance per local day, one stacked segment per trip (same colour, split by a surface-coloured gap). Labels
+    only the longest day and today, plus a dashed line at the average per calendar day. `trips` needs start, km and
+    minutes; kwh, frm and to (place names) are used when present."""
+    p = theme.palette()
+    t = trips.sort_values("start").assign(day=lambda d: pd.to_datetime(d["start"].dt.date))
+    t["n"] = t.groupby("day").cumcount()
+    per_day = t.groupby("day").agg(km=("km", "sum"), trips=("km", "size"), minutes=("minutes", "sum"))
+    head = {d: f"<b>{d:%a %d %b} · {r.km:.0f} km</b> · {int(r.trips)} trip{'s' if r.trips > 1 else ''} · "
+               f"{int(r.minutes // 60)} h {int(r.minutes % 60):02d} min driving" for d, r in per_day.iterrows()}
+    fig = go.Figure()
+    for n, seg in t.groupby("n"):          # the n-th trip of each day: Plotly stacks traces that share an x
+        fig.add_trace(go.Bar(
+            x=seg["day"] + pd.Timedelta(hours=12), y=seg["km"], width=43_200_000,
+            marker=dict(color=p["series"], line=dict(width=1, color=p["surface"])),
+            customdata=list(zip(seg["day"].map(head), seg.apply(trip_line, axis=1))),
+            hovertemplate="%{customdata[0]}<br>%{customdata[1]}<extra></extra>"))
+    days = per_day.index
+    if xrange:
+        span = (pd.Timestamp(xrange[1]).normalize() - pd.Timestamp(xrange[0]).normalize()).days + 1
+    else:
+        span = (days.max() - days.min()).days + 1
+    avg = per_day["km"].sum() / max(span, 1)
+    fig.add_hline(y=avg, line=dict(color=p["baseline"], width=1, dash="dash"), annotation_text=f"avg {avg:.0f} km/day",
+                  annotation_position="top left", annotation_font=dict(size=11, color=p["muted"]))
+    today = pd.Timestamp(xrange[1]).tz_localize(None).normalize() if xrange else days.max()
+    for d in dict.fromkeys([per_day["km"].idxmax()] + ([today] if today in days else [])):
+        edge = d == today                    # today is the last bar: end the label at its right edge, not past the axis
+        fig.add_annotation(x=d + pd.Timedelta(hours=18 if edge else 12), xanchor="right" if edge else "center",
+                           y=per_day.loc[d, "km"], text=f"{per_day.loc[d, 'km']:.0f} km",
+                           yanchor="bottom", showarrow=False, font=dict(size=12, color=p["ink"]))
+    fig.update_layout(barmode="stack", bargap=0, yaxis_title="km", hovermode="closest")
+    return day_axis(theme.style(fig, height, "Distance per day"), pd.Series(days), xrange)
+
+
 def soc_gauge(soc):
     """Half-circle SoC gauge; tinted zones below 20 % (low) and above 80 % (high), ticks at the edges."""
     p = theme.palette()

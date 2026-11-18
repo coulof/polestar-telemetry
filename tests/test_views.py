@@ -43,3 +43,21 @@ def test_chip_text_is_html_escaped():
     from polestar import theme
     assert "<script>" not in theme.chip("<script>alert(1)</script>", False)
     assert "&lt;script&gt;" in theme.chip("<script>", False)
+
+
+def test_distance_chart_stacks_trips_and_labels_only_the_longest_day_and_today():
+    tz = "Europe/Paris"
+    trips = pd.DataFrame({
+        "start": pd.to_datetime(["2026-11-10 08:00", "2026-11-10 17:30", "2026-11-11 09:00", "2026-11-12 07:45"]).tz_localize(tz),
+        "km": [12.0, 40.0, 5.0, 8.0], "minutes": [20.0, 45.0, 10.0, 15.0], "kwh": [2.0, None, None, 1.5],
+        "frm": ["Home", "Office", None, "Home"], "to": ["Office", "Home", None, "Gym"]})
+    xrange = [pd.Timestamp("2026-11-09 12:00", tz=tz), pd.Timestamp("2026-11-12 12:00", tz=tz)]
+    fig = views.distance_chart(trips, xrange)
+    assert fig.layout.barmode == "stack" and len(fig.data) == 2          # at most two trips on one day
+    labels = [a.text for a in fig.layout.annotations]
+    assert "52 km" in labels and "8 km" in labels and "5 km" not in labels   # longest day and today only
+    assert any(a.startswith("avg 16 km/day") for a in labels)            # 65 km over 4 calendar days
+    first = fig.data[0].customdata[0]
+    assert first[0].startswith("<b>Tue 10 Nov · 52 km</b> · 2 trips")
+    assert first[1] == "08:00 Home → Office · 12 km · 20 min · ~2.0 kWh"
+    assert fig.data[0].customdata[1][1] == "09:00 · 5 km · 10 min"       # places unknown: time only

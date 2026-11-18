@@ -221,8 +221,11 @@ with tab_trips:
         kwh100 = derive.avg_consumption(trip_table)
         c[2].metric("Avg consumption (est.)", f"{kwh100:.1f} kWh/100 km" if pd.notna(kwh100) else "—", border=True,
                     help="From the SoC drop over trips with a battery reading at both ends." )
-        daily = trip_table.assign(day=trip_table["start"].dt.date).groupby("day", as_index=False)["km"].sum()
-        st.plotly_chart(bar_chart(daily, "day", "km", "Distance per day", "km", xrange=xrange), width="stretch")
+        with closing(connect(DB_PATH)) as ldb:      # place names for the tooltip, as on the Path tab
+            positions, _, _ = path.label_positions(location, config.load(), place_labels.load(ldb))
+        legs = trip_table.sort_values("start").reset_index(drop=True)
+        legs = legs.assign(**path.stops(legs, positions)[["frm", "to"]])
+        st.plotly_chart(views.distance_chart(legs, xrange), width="stretch")
         eff = trip_table.dropna(subset=["kwh_per_100km"])
         if len(eff):
             fig = line_chart(eff, "start", "kwh_per_100km", "Consumption per trip (estimated from SoC)", "kWh/100 km",
