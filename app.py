@@ -260,7 +260,7 @@ with tab_charge:
         s = sessions.loc[pick]
         cw = battery[(battery["time"] >= s["start"]) & (battery["time"] <= s["end"])].copy()
         cw["kw"] = pd.to_numeric(cw.get("chargingPowerWatts"), errors="coerce") / 1000
-        st.plotly_chart(line_chart(cw, "time", "kw", "Charging power", "kW", step=True).update_yaxes(rangemode="tozero"),
+        st.plotly_chart(line_chart(cw, "time", "kw", "Charging power", "kW", mode="lines+markers", step=True),
                         width="stretch")
         place = s["location"] if isinstance(s["location"], str) else "unpriced location"
         cost = ("cost unknown" if pd.isna(s["cost"]) else f"€{s['cost']:.2f} (entered manually)" if s["manual"]
@@ -378,6 +378,11 @@ with tab_ins:
                     help=f"Charged energy x {cfg_i['co2_g_per_kwh']} g/kWh, per km driven (latest month).")
     if len(cap):
         fig = line_chart(cap, "start", "capacity_kwh", "Energy per full charge, by session", "kWh", mode="markers")
+        fig.update_traces(customdata=cap[["kwh_from_power", "soc_start", "soc_end"]], hovertemplate=(   # how each dot is worked out
+            "%{x|%d %b %H:%M}<br><b>%{y:.0f} kWh</b> for a full 0-100 % charge<br>"
+            "%{customdata[0]:.1f} kWh charged, SoC %{customdata[1]:.0f} → %{customdata[2]:.0f} %, scaled to 100 %<br>"
+            "Measured at the charger: includes charging losses<extra></extra>"), selector=dict(type="scatter"))
+        fig.update_layout(hovermode="closest")   # one session per tooltip, not a unified date header
         fig.add_hline(y=battery_kwh(), line=dict(color=theme.palette()["baseline"], width=1, dash="dot"),
                       annotation_text="usable battery", annotation_position="bottom right", annotation_font_color=theme.palette()["muted"])
         st.plotly_chart(fig, width="stretch")   # independent sessions: dots, not a line
