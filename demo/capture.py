@@ -5,9 +5,13 @@
     uv run --with playwright python demo/capture.py http://localhost:8599 docs/img
 
 Needs a Chromium that Playwright can find (`playwright install chromium`, or the system Chrome with CHROME=/path).
-Output: now-light/dark.png, now-phone.png, trips, charging, report, battery (light) and tour.webm."""
+Output: now-light/dark.png, now-phone.png, trips, charging, report, battery (light), tour.webm and, when `ffmpeg` is on
+the PATH, tour.gif (the tour without the page load, 8 fps, 720 px wide)."""
 import os
+import shutil
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -15,7 +19,9 @@ from playwright.sync_api import sync_playwright
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8599"
 OUT = Path(sys.argv[2] if len(sys.argv) > 2 else "docs/img")
 OUT.mkdir(parents=True, exist_ok=True)
-TABS = ["Now", "Report", "Trips", "Charging", "Battery"]
+TABS = ["Now", "Report", "Trips", "Charging", "Battery"]            # screenshots
+TOUR = ["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Path"]   # the animated tour
+SLOW = {"Path": 7000}                                               # the map tiles load after the tab opens
 
 
 def open_app(browser, scheme="light", width=1280, height=1000, **kw):
@@ -49,15 +55,27 @@ def main():
         ctx, page = open_app(browser, "light", 390, 844, is_mobile=True, has_touch=True)
         page.screenshot(path=OUT / "now-phone.png")
         ctx.close()
+        t0 = time.monotonic()
         ctx, page = open_app(browser, "light", 1000, 700, record_video_dir=str(OUT / "_video"), record_video_size={"width": 1000, "height": 700})
-        for name in TABS * 1:
-            tab(page, name, 2200)
+        skip = time.monotonic() - t0 - 1.0     # the recording starts with the page load: cut it, keeping a second of the loaded app
+        for name in TOUR:
+            tab(page, name, SLOW.get(name, 2200))
         ctx.close()   # flushes the video
         browser.close()
     vids = list((OUT / "_video").glob("*.webm"))
     if vids:
         vids[0].replace(OUT / "tour.webm")
         (OUT / "_video").rmdir()
+        make_gif(OUT / "tour.webm", OUT / "tour.gif", skip)
+
+
+def make_gif(webm, gif, skip):
+    """webm to a looping GIF with a palette made for this video (small file, no dithering noise)."""
+    if not shutil.which("ffmpeg"):
+        print("ffmpeg not found: tour.webm written, tour.gif skipped")
+        return
+    vf = "fps=8,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{max(skip, 0):.2f}", "-i", str(webm), "-vf", vf, "-loop", "0", str(gif)], check=True)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ Collect, store and understand your Polestar 2 usage: trips, charging, battery, c
 
 The [Polestar Data Portal API](api.json) only returns the **current state** of the car. It has no history and no trips. This app polls it, keeps every snapshot in SQLite, derives trips and charge sessions from those snapshots, and shows them in a Streamlit dashboard.
 
-<p align="center"><img src="docs/img/tour.gif" alt="Tour of the dashboard: Now, Report, Trips, Charging, Battery" width="720"></p>
+<p align="center"><img src="docs/img/tour.gif" alt="Tour of the dashboard: Now, Report, Trips, Charging, Battery, Insights, Path" width="720"></p>
 
 <p align="center">
   <img src="docs/img/now-light.png" alt="Now tab, light theme" width="49%">

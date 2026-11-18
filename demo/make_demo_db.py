@@ -4,6 +4,7 @@
 
 The last event is a charging session in progress at the office car park, ending a few minutes before now."""
 import datetime as dt
+import os
 import random
 import sys
 import time
@@ -185,6 +186,7 @@ def add_reports(db, now):
 
 
 def main():
+    os.environ.setdefault("CONFIG_PATH", str(Path(__file__).with_name("config.toml")))   # the sample report needs the demo tariffs
     path = sys.argv[1] if len(sys.argv) > 1 else "data/demo.db"
     Path(path).unlink(missing_ok=True)
     db = connect(path)

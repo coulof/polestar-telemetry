@@ -8,11 +8,13 @@ POLESTAR_MOCK=1 mise run app    # adds the "Compare (mock)" design tab
 Regenerate the README images from a synthetic database (never real data):
 
 ```sh
-uv run python demo/make_demo_db.py data/demo.db
-DB_PATH=data/demo.db CONFIG_PATH=demo/config.toml uv run python -m polestar.report --generate --week <last ISO week>   # optional: needs claude
+uv run python demo/make_demo_db.py data/demo.db    # also stores a hand-written sample report for the last two weeks
+DB_PATH=data/demo.db CONFIG_PATH=demo/config.toml uv run python -m polestar.report --generate --week <last ISO week>   # optional: a real report instead (needs claude)
 DB_PATH=data/demo.db CONFIG_PATH=demo/config.toml .venv/bin/python -m streamlit run app.py --server.port 8599 &
 uv run --no-project --with playwright python demo/capture.py http://localhost:8599 docs/img   # CHROME=/path/to/chrome if needed
 ```
+
+`capture.py` also records the tour and, when `ffmpeg` is installed, turns it into `docs/img/tour.gif` (the page load is trimmed off).
 
 Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS.md`](../AGENTS.md), which is written for coding agents and is just as useful for people.
 
