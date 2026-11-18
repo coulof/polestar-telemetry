@@ -99,6 +99,7 @@ mise run app                        # dashboard on http://localhost:8501
 |---|---|
 | [Configuration](docs/configuration.md) | Credentials, environment variables, `config.toml` (prices, tariffs, timezone) |
 | [The dashboard](docs/dashboard.md) | What each tab shows and how the data behaves |
+| [Database](docs/database.md) | The SQLite schema as a diagram, who writes each table, and the keys that outlive the data |
 | [Deployment](docs/deployment.md) | Containers, boot persistence, login page, backups, updates, weekly report, troubleshooting |
 | [Development](docs/development.md) | Tests, README images, code layout |
 | [`SECURITY.md`](SECURITY.md) | What to know before exposing the dashboard, and how to report a vulnerability |
