@@ -2,7 +2,7 @@
 
 ```sh
 mise run test          # the whole suite; no network and no real claude CLI
-POLESTAR_MOCK=1 mise run app    # adds the "Compare (mock)" and "Path (mock)" design tabs
+POLESTAR_MOCK=1 mise run app    # adds the "Compare (mock)" design tab
 ```
 
 Regenerate the README images from a synthetic database (never real data):
@@ -34,7 +34,8 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 | `polestar/freshness.py` | Age of the collector's last successful poll, for the stale-data alert |
 | `polestar/costs.py` | Manual charge costs stored per session |
 | `polestar/theme.py` | Chart styling, CSS and the status chip |
-| `polestar/mock_compare.py`, `polestar/mock_path.py` | Design mock-ups on synthetic data |
+| `polestar/path.py` | Path tab: parked places, trip stops, trail map, stays timeline |
+| `polestar/mock_compare.py` | Design mock-up on synthetic data |
 | `deploy/` | systemd units and timers (stack, report, backup), `update.sh`, `weekly-report.sh`, `backup.sh`, `freshness.sh`, `notify.sh` |
 | `static/` | Self-hosted Inter font and its licence (`OFL.txt`, must stay next to the font) |
 | `demo/` | Synthetic database and screenshot capture for the README images |

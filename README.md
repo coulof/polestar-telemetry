@@ -106,7 +106,7 @@ mise run app                        # dashboard on http://localhost:8501
 
 ## Roadmap
 
-1. Build the real month-to-month **Compare** view and the **Hero's Path** map and timeline. Mock-ups of both exist (`POLESTAR_MOCK=1`); they need a few weeks of real history. The car reports no position while driving, so a real path would be curves between parked positions.
+1. Build the real month-to-month **Compare** view. A mock-up exists (`POLESTAR_MOCK=1`); it needs a few weeks of real history.
 2. Import local history into the server database.
 3. Explore the `request_rvdc` records in the Polestar data export (meaning unverified).
 4. Saved charge locations: the API endpoint exists but returns 404 for this car, so there is nothing to import yet.

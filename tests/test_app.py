@@ -32,7 +32,7 @@ def app(demo_db, monkeypatch):
 def test_dashboard_renders_without_exceptions(app):
     at = app.run()
     assert not at.exception
-    assert [t.label for t in at.tabs][:8] == ["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
+    assert [t.label for t in at.tabs][:9] == ["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Path", "Air", "Data"]
 
 
 def test_report_tab_is_hidden_when_the_integration_is_disabled(app, tmp_path, monkeypatch):
@@ -41,14 +41,14 @@ def test_report_tab_is_hidden_when_the_integration_is_disabled(app, tmp_path, mo
     monkeypatch.setenv("CONFIG_PATH", str(cfg))
     at = app.run()
     assert not at.exception
-    assert [t.label for t in at.tabs] == ["Now", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
+    assert [t.label for t in at.tabs] == ["Now", "Trips", "Charging", "Battery", "Insights", "Path", "Air", "Data"]
 
 
 def test_mock_tabs_only_with_the_mock_flag(app, monkeypatch):
     monkeypatch.setenv("POLESTAR_MOCK", "1")
     at = app.run()
     assert not at.exception
-    assert [t.label for t in at.tabs][8:] == ["Compare (mock)", "Path (mock)"]
+    assert [t.label for t in at.tabs][9:] == ["Compare (mock)"]
 
 
 def test_demo_ribbon_only_in_the_demo(app, monkeypatch):

@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from polestar import admin, charging, config, costs, derive, insights, report, theme, views
+from polestar import admin, charging, config, costs, derive, insights, path, report, theme, views
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
@@ -169,13 +169,13 @@ sessions = derive.price_sessions(sessions, location, config.load(), battery, man
 
 MOCK = os.environ.get("POLESTAR_MOCK") == "1"   # design mock-up on synthetic data, never on the server
 REPORT_ON = config.load()["report"]["enabled"]   # [report] enabled = false hides the Claude integration
-names = ["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Air", "Data"]
+names = ["Now", "Report", "Trips", "Charging", "Battery", "Insights", "Path", "Air", "Data"]
 if not REPORT_ON:
     names.remove("Report")
-names += ["Compare (mock)", "Path (mock)"] if MOCK else []
+names += ["Compare (mock)"] if MOCK else []
 tabs = dict(zip(names, st.tabs(names)))
-tab_now, tab_trips, tab_charge, tab_batt, tab_ins, tab_air, tab_data = (
-    tabs[n] for n in ("Now", "Trips", "Charging", "Battery", "Insights", "Air", "Data"))
+tab_now, tab_trips, tab_charge, tab_batt, tab_ins, tab_path, tab_air, tab_data = (
+    tabs[n] for n in ("Now", "Trips", "Charging", "Battery", "Insights", "Path", "Air", "Data"))
 
 # ---- now -----------------------------------------------------------------
 with tab_now:
@@ -397,6 +397,10 @@ with tab_ins:
         st.dataframe(month.round({"km": 0, "kwh": 1, "cost": 2, "cost_per_100km": 2, "co2_kg": 1, "co2_g_per_km": 0}),
                      hide_index=True, width="stretch")
 
+# ---- path ----------------------------------------------------------------
+with tab_path:
+    path.render(trip_table, location, config.load(), period_days, LOCAL_TZ)
+
 # ---- air quality ---------------------------------------------------------
 with tab_air:
     air = derive.air_quality(data["preCleaning"])
@@ -469,8 +473,6 @@ with tab_data:
         st.json(raw)
 
 if MOCK:
-    from polestar import mock_compare, mock_path
+    from polestar import mock_compare
     with tabs["Compare (mock)"]:
         mock_compare.render()
-    with tabs["Path (mock)"]:
-        mock_path.render()
