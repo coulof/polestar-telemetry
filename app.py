@@ -222,14 +222,14 @@ with tab_trips:
         c[2].metric("Avg consumption (est.)", f"{kwh100:.1f} kWh/100 km" if pd.notna(kwh100) else "—", border=True,
                     help="From the SoC drop over trips with a battery reading at both ends." )
         daily = trip_table.assign(day=trip_table["start"].dt.date).groupby("day", as_index=False)["km"].sum()
-        st.plotly_chart(bar_chart(daily, "day", "km", "Distance per day", "km"), width="stretch")
+        st.plotly_chart(bar_chart(daily, "day", "km", "Distance per day", "km", xrange=xrange), width="stretch")
         eff = trip_table.dropna(subset=["kwh_per_100km"])
         if len(eff):
-            st.plotly_chart(line_chart(eff, "start", "kwh_per_100km", "Consumption per trip (estimated from SoC)",
-                                       "kWh/100 km", mode="lines+markers"), width="stretch")
+            fig = line_chart(eff, "start", "kwh_per_100km", "Consumption per trip (estimated from SoC)", "kWh/100 km",
+                             mode="lines+markers")
+            st.plotly_chart(fig.update_xaxes(range=xrange) if xrange else fig, width="stretch")   # lines up with the bars
         with st.expander("Table"):
-            st.dataframe(trip_table.round({"km": 1, "minutes": 0, "avg_kmh": 0, "kwh": 1, "kwh_per_100km": 1}),
-                         hide_index=True, width="stretch")
+            views.table(trip_table)
 
 # ---- charging ------------------------------------------------------------
 with tab_charge:
@@ -305,9 +305,7 @@ with tab_charge:
                     admin.lock(st.session_state)
                     st.rerun()
         with st.expander("Table"):
-            st.dataframe(sessions.round({"minutes": 1, "kwh_from_soc": 1, "kwh_from_power": 1, "peak_kw": 1,
-                                         "price_per_kwh": 2, "fee": 2, "cost": 2, "cost_cheapest": 2, "saving": 2,
-                                         "median_amps": 0}), hide_index=True, width="stretch")
+            views.table(sessions)
 
     with st.expander("Car charging settings"):
         cdb = connect(DB_PATH)
@@ -341,15 +339,17 @@ with tab_batt:
         if xrange:
             fig.update_xaxes(range=xrange)
         p = theme.palette()
-        for _, sess in sessions.tail(40).iterrows():  # shade charging sessions
-            fig.add_vrect(x0=sess["start"], x1=sess["end"], fillcolor=rgba(p["good"], 0.18), line_width=0, layer="below")
+        span = (xrange[1] - xrange[0]) if xrange else (battery_v["time"].max() - battery_v["time"].min())
+        for _, sess in sessions.tail(40).iterrows():  # shade charging sessions, never thinner than 1/150 of the axis
+            fig.add_vrect(x0=sess["start"], x1=max(sess["end"], sess["start"] + span / 150), fillcolor=rgba(p["good"], 0.18),
+                          line_width=0, layer="below")
         st.plotly_chart(fig, width="stretch")
-        st.caption("Shaded: charging sessions.")
+        st.caption("Shaded green: charging sessions.")
         drain = derive.idle_drain(battery_v, trip_table)
         if drain.empty:
             empty("No parked drain measured yet (needs consecutive readings while parked and not charging).")
         else:
-            st.plotly_chart(bar_chart(drain, "date", "soc_lost_pct", "SoC lost while parked", "% per day"),
+            st.plotly_chart(bar_chart(drain, "date", "soc_lost_pct", "SoC lost while parked", "% per day", xrange=xrange),
                             width="stretch")
             st.caption("Lower bound: readings are event-driven, so slow drain between events is attributed "
                        "to the day of the next reading.")
@@ -364,8 +364,8 @@ with tab_ins:
     c = st.columns(4)
     c[0].metric("Real-world range", f"{rr['range_100_km']:.0f} km" if rr else "—", border=True,
                 help="Km driven per % of SoC on your trips, extrapolated to 100 %. Needs trips with a SoC drop of 2 % or more.")
-    c[1].metric("Energy per full charge", f"{cap['capacity_kwh'].median():.0f} kWh" if len(cap) else "—", border=True,
-                help="Median over charge sessions that added 10 % or more, measured at the charger (includes losses, "
+    c[1].metric("Energy per charge", f"{cap['capacity_kwh'].median():.0f} kWh" if len(cap) else "—", border=True,
+                help="Energy for a full 0-100 % charge: median over charge sessions that added 10 % or more, measured at the charger (includes losses, "
                      "so above the usable battery size).")
     cost100 = this["cost_per_100km"] if this is not None else float("nan")
     c[2].metric("Cost per 100 km", f"€{cost100:.2f}" if pd.notna(cost100) else "—", border=True,
@@ -392,12 +392,11 @@ with tab_ins:
     else:
         st.plotly_chart(activity_grid_chart(insights.activity_grid(seg, LOCAL_TZ), window.normalize(), now_local.normalize()),
                         width="stretch")
-        st.caption("Each cell is one hour: orange when the car was driven, green when it charged, blank when parked. "
+        st.caption("Each cell is one hour: blank when parked. "
                    "Colour deepens with the minutes. Events arrive only when the mode changes.")
     if not month.empty:
         st.subheader("By month")
-        st.dataframe(month.round({"km": 0, "kwh": 1, "cost": 2, "cost_per_100km": 2, "co2_kg": 1, "co2_g_per_km": 0}),
-                     hide_index=True, width="stretch")
+        views.table(month)
 
 # ---- path ----------------------------------------------------------------
 with tab_path:
@@ -441,23 +440,23 @@ with tab_air:
         else:
             pm = air_v.dropna(subset=["pm25"])
             fig = line_chart(pm, "time", "pm25", "PM2.5 readings", "PM2.5", mode="markers")
-            fig.update_traces(hovertemplate="%{x|%d %b %H:%M}<br>%{y:.0f} PM2.5<extra></extra>")
+            fig.update_traces(hovertemplate="%{x|%d %b %H:%M}<br>%{y:.0f} PM2.5<extra></extra>",   # ring keeps stacked dots apart
+                              marker=dict(opacity=0.85, line=dict(width=2, color=theme.palette()["surface"])))
             fig = views.air_bands(fig, cfg_a, float(pm["pm25"].max()))
             if xrange:
                 fig.update_xaxes(range=xrange)
             st.plotly_chart(fig, width="stretch")
         daily = derive.air_daily(air_v, LOCAL_TZ)
         if len(daily) >= 2:
-            st.plotly_chart(views.air_daily_chart(daily, cfg_a), width="stretch")
+            st.plotly_chart(views.air_daily_chart(daily, cfg_a, xrange), width="stretch")
         if not daily.empty:
             st.subheader("Daily summary")
-            st.dataframe(daily.sort_values("date", ascending=False).round(
-                {"aqi_avg": 1, "aqi_max": 0, "pm25_min": 0, "pm25_avg": 1, "pm25_max": 0}), hide_index=True, width="stretch")
+            views.table(daily.sort_values("date", ascending=False))
         cycles = derive.cleaning_cycles(air)
         if not cycles.empty:
             st.subheader("Pre-cleaning cycles")
             cycles["completed"] = cycles["completed"].dt.tz_convert(LOCAL_TZ)
-            st.dataframe(cycles, hide_index=True, width="stretch")
+            views.table(cycles)
 
 # ---- data ----------------------------------------------------------------
 with tab_data:

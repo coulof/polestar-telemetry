@@ -15,7 +15,7 @@ import streamlit as st
 
 from . import admin, place_labels, theme
 from .collect import connect
-from .views import empty
+from .views import empty, rgba, table
 
 CLUSTER_M = 150          # parked positions closer than this (and outside any configured location) are one place
 MAX_DAYS = 60            # the day scrubber holds one Plotly frame per day, so keep it light
@@ -194,26 +194,27 @@ def trail_figure(places, trips, days, zoom="Follow"):
         cam = dict(map=dict(center=view[0], zoom=view[1])) if zoom == "Follow" else {}
         frames.append(go.Frame(name=str(i), data=data, traces=[1, 2, 3, 4], layout=go.Layout(**cam, annotations=[dict(
             text=label, x=0.01, y=0.98, xref="paper", yref="paper", xanchor="left", yanchor="top", showarrow=False,
-            font=dict(size=15, color=p["ink"]), bgcolor="rgba(0,0,0,0.0)")])))
+            font=dict(size=15, color=p["ink"]), bgcolor=rgba(p["surface"], 0.8))])))
     fig.frames = frames
     steps = [dict(method="animate", label=f"{d:%d %b}" if (i % 5 == 0 or i == last) else "",
                   args=[[str(i)], dict(mode="immediate", frame=dict(duration=0, redraw=True), transition=dict(duration=0))])
              for i, d in enumerate(days)]
     all_view = fit_view([v[0] for v in places.values()], [v[1] for v in places.values()]) if len(places) > 1 else (dict(lat=fallback[0], lon=fallback[1]), 12)
     fig.update_layout(
-        map=dict(style="carto-darkmatter" if dark else "carto-positron",
+        map=dict(style="carto-darkmatter-nolabels" if dark else "carto-positron-nolabels",   # our place names are the only text
                  center=last_view[0] if zoom == "Follow" else dict(lat=centre[0], lon=centre[1]) if zoom == "City" else all_view[0],
                  zoom=last_view[1] if zoom == "Follow" else 11 if zoom == "City" else all_view[1]),
-        sliders=[dict(active=last, steps=steps, x=0.14, len=0.85, y=0.0, pad=dict(t=10, b=0), currentvalue=dict(visible=False),
+        sliders=[dict(active=last, steps=steps, x=0.03, len=0.97, y=0.0, pad=dict(t=48, b=0),   # its own row under Play / Pause currentvalue=dict(visible=False),
                       bgcolor=p["grid"], activebgcolor=p["series"], bordercolor=p["grid"], tickcolor=p["muted"],
                       font=dict(color=p["muted"], size=11))],
         updatemenus=[dict(type="buttons", direction="left", x=0.0, y=0.0, xanchor="left", yanchor="top", pad=dict(t=8), showactive=False,
                           buttons=[dict(label="Play", method="animate", args=[None, dict(frame=dict(duration=420, redraw=True), fromcurrent=True, transition=dict(duration=0))]),
                                    dict(label="Pause", method="animate", args=[[None], dict(mode="immediate", frame=dict(duration=0, redraw=False), transition=dict(duration=0))])])],
         annotations=[dict(text=last_label, x=0.01, y=0.98, xref="paper", yref="paper",
-                          xanchor="left", yanchor="top", showarrow=False, font=dict(size=15, color=p["ink"]))],
-        legend=dict(orientation="h", y=1.02, x=1, xanchor="right", font=dict(size=12, color=p["muted"])), showlegend=True)
-    return theme.style(fig, 600).update_layout(showlegend=True, margin=dict(l=0, r=0, t=0, b=64))
+                          xanchor="left", yanchor="top", showarrow=False, font=dict(size=15, color=p["ink"]), bgcolor=rgba(p["surface"], 0.8))],
+        legend=dict(orientation="h", yref="container", y=0, yanchor="bottom", x=0, font=dict(size=12, color=p["muted"])),   # under the slider: clear of the day label
+        showlegend=True)
+    return theme.style(fig, 660).update_layout(showlegend=True, margin=dict(l=0, r=0, t=0, b=180))
 
 
 def window_start(now, days, first_seen=None):
@@ -226,9 +227,11 @@ def timeline_figure(trips, now, days=7, first_seen=None):
     p = theme.palette()
     start = window_start(now, days, first_seen)
     df = stays(trips[trips["end"] >= start], start, pd.Timestamp(now))
+    df.loc[df["row"] == "Unknown", "kind"] = "Unknown"          # no position reported: drawn faint, as missing data
     order = ["Driving"] + sorted(set(df["row"]) - {"Driving"})
     fig = px.timeline(df, x_start="start", x_end="end", y="row", color="kind", category_orders={"row": order},
-                      color_discrete_map={"Stay": p["baseline"], "Driving": p["series"]})
+                      color_discrete_map={"Stay": p["baseline"], "Driving": p["series"], "Unknown": p["faint"]})
+    fig.update_traces(width=0.5, hovertemplate="%{y}<br>%{base|%a %d %b %H:%M} to %{x|%a %d %b %H:%M}<extra></extra>")
     fig.update_yaxes(title=None, autorange="reversed")
     fig.update_xaxes(title=None)
     return theme.style(fig, 300, f"Where the car was, last {days} days").update_layout(showlegend=False)
@@ -327,6 +330,6 @@ def render(trip_table, location, cfg, period_days, tz, saved=None, db_path=None)
     st.subheader("Timeline")
     st.plotly_chart(timeline_figure(trips, now, first_seen=first_seen), width="stretch", config={"displayModeBar": False})
     st.subheader("Places")
-    st.dataframe(places_table(trips, now, n, first_seen), hide_index=True, width="stretch")
+    table(places_table(trips, now, n, first_seen))
     with st.expander("Name a place"):
         edit_labels(seeds, saved, trips["to"].value_counts(), db_path)

@@ -22,20 +22,32 @@ def line_chart(df, x, y, title, ytitle, mode="lines", step=False, fill=False, he
         x=df[x], y=df[y], mode=mode,
         line=dict(color=p["series"], width=2, shape="hv" if step else "linear"),
         marker=dict(size=8, color=p["series"]),
-        fill="tozeroy" if fill else None, fillcolor=rgba(p["series"], 0.12),
+        fill="tozeroy" if fill else None, fillcolor=rgba(p["series"], 0.10),
         hovertemplate="%{x|%d %b %H:%M}<br>%{y:.1f} " + ytitle + "<extra></extra>",
     ))
     fig.update_layout(yaxis_title=ytitle, hovermode="x unified")
     return theme.style(fig, height, title)
 
 
-def bar_chart(df, x, y, title, ytitle, height=300):
+def day_axis(fig, days, xrange=None):
+    """A date x-axis for one value per local day: the period when given (so it lines up with the time charts),
+    otherwise the days found padded by one day (a lone day would otherwise fan out into hours)."""
+    if xrange:
+        rng = [pd.Timestamp(t).tz_localize(None) for t in xrange]      # the day values are naive local dates
+        rng[1] = max(rng[1], days.max() + pd.Timedelta(hours=18))      # today's half-day bar is not cut off
+    else:
+        rng = [days.min() - pd.Timedelta(days=1), days.max() + pd.Timedelta(days=1)]
+    return fig.update_xaxes(type="date", range=rng)
+
+
+def bar_chart(df, x, y, title, ytitle, height=300, xrange=None):
+    """One bar per local day, half a day wide on a date axis, so days without a value show as gaps."""
     p = theme.palette()
-    fig = go.Figure(go.Bar(x=df[x], y=df[y], marker=dict(color=p["series"]),
-                           hovertemplate="%{x}<br>%{y:.1f} " + ytitle + "<extra></extra>"))
-    fig.update_layout(yaxis_title=ytitle, bargap=0.4)
-    fig.update_xaxes(type="category")     # one label per bar; a date axis fans out with a single day
-    return theme.style(fig, height, title)
+    days = pd.to_datetime(df[x])
+    fig = go.Figure(go.Bar(x=days + pd.Timedelta(hours=12), y=df[y], width=43_200_000, marker=dict(color=p["series"]),
+                           hovertemplate="%{x|%a %d %b}<br>%{y:.1f} " + ytitle + "<extra></extra>"))
+    fig.update_layout(yaxis_title=ytitle)
+    return day_axis(theme.style(fig, height, title), days, xrange)
 
 
 def soc_gauge(soc):
@@ -59,6 +71,7 @@ def activity_grid_chart(grid, first, last):
     """One row per local day from `first` to `last`, one column per hour; a cell is coloured only when the car was
     driven or charging in that hour (parked leaves it blank)."""
     p = theme.palette()
+    floor = 0.6 if theme.is_dark() else 0.45     # the faintest step stays visible on the dark surface
     days = [d.date() for d in pd.date_range(first, last)]
     fig = go.Figure()
     for state, colour in (("Driving", p["series"]), ("Charging", p["good"])):
@@ -69,11 +82,17 @@ def activity_grid_chart(grid, first, last):
                 z[days.index(r["date"])][int(r["hour"])] = r["minutes"]
         fig.add_trace(go.Heatmap(
             z=z, x=list(range(24)), y=[f"{d:%a %d %b}" for d in days], name=state, showscale=False, xgap=1, ygap=2,
-            zmin=0, zmax=60, colorscale=[[0, rgba(colour, 0.45)], [1, colour]], hoverongaps=False,
+            zmin=0, zmax=60, colorscale=[[0, rgba(colour, floor)], [1, colour]], hoverongaps=False,
             hovertemplate="%{y}, %{x}:00<br>%{z:.0f} min " + state.lower() + "<extra></extra>"))
+    for state, colour in (("Driving", p["series"]), ("Charging", p["good"])):
+        # heatmaps have no legend entry of their own: an empty square marker names the colour
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", name=state, showlegend=True,
+                                 marker=dict(symbol="square", size=11, color=colour)))
     fig.update_xaxes(tickmode="linear", dtick=3, ticksuffix=":00")
-    fig.update_yaxes(autorange="reversed", showgrid=False)
-    return theme.style(fig, max(160, 26 * len(days) + 60), "Driving and charging, by day and hour")
+    fig.update_yaxes(type="category", autorange="reversed", showgrid=False)
+    return theme.style(fig, max(160, 26 * len(days) + 60), "Driving and charging, by day and hour").update_layout(
+        showlegend=True, legend=dict(orientation="h", x=0, yref="container", y=0, yanchor="bottom", font=dict(size=12)),   # below the hour labels:
+        margin=dict(b=60))                                                                                # no clash with the title on phones
 
 
 AIR_LABEL = {"good": "Good", "moderate": "Moderate", "high": "High"}
@@ -92,20 +111,71 @@ def air_bands(fig, cfg, top):
     return fig
 
 
-def air_daily_chart(daily, cfg):
-    """Daily PM2.5: the min-max range as a band, the mean as a line, over the Good / Moderate / High bands."""
+def air_daily_chart(daily, cfg, xrange=None):
+    """Daily PM2.5: the min-max range as a grey band, the mean as a line, over the Good / Moderate / High bands.
+    Days sit at local noon on the same period axis as the readings chart above it."""
     p = theme.palette()
-    x = [str(d) for d in daily["date"]]
+    days = pd.to_datetime(daily["date"])
+    x = days + pd.Timedelta(hours=12)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=x, y=daily["pm25_max"], mode="lines", line=dict(width=0), hoverinfo="skip"))
     fig.add_trace(go.Scatter(x=x, y=daily["pm25_min"], mode="lines", line=dict(width=0), fill="tonexty",
-                             fillcolor=rgba(p["series"], 0.25), hoverinfo="skip"))
+                             fillcolor=rgba(p["baseline"], 0.12), hoverinfo="skip"))   # grey, so it does not tint the bands
     fig.add_trace(go.Scatter(x=x, y=daily["pm25_avg"], mode="lines+markers", line=dict(color=p["series"], width=2),
-                             marker=dict(size=7, color=p["series"]), customdata=daily[["pm25_min", "pm25_max"]],
-                             hovertemplate="%{x}<br>mean %{y:.1f}, min %{customdata[0]:.0f}, max %{customdata[1]:.0f}<extra></extra>"))
+                             marker=dict(size=8, color=p["series"]), customdata=daily[["pm25_min", "pm25_max"]],
+                             hovertemplate="%{x|%a %d %b}<br>mean %{y:.1f}, min %{customdata[0]:.0f}, max %{customdata[1]:.0f}<extra></extra>"))
     fig.update_layout(yaxis_title="PM2.5 (assumed µg/m³)", hovermode="x unified")
-    fig.update_xaxes(type="category")
-    return air_bands(theme.style(fig, 300, "PM2.5 per day: mean and range"), cfg, float(daily["pm25_max"].max()))
+    fig = day_axis(theme.style(fig, 300, "PM2.5 per day: mean and range"), days, xrange)
+    return air_bands(fig, cfg, float(daily["pm25_max"].max()))
+
+
+COLUMNS = {   # readable headers and units for the tables; keys are the data frame column names
+    "start": st.column_config.DatetimeColumn("Start", format="D MMM HH:mm"),
+    "end": st.column_config.DatetimeColumn("End", format="D MMM HH:mm"),
+    "completed": st.column_config.DatetimeColumn("Completed", format="D MMM HH:mm"),
+    "date": st.column_config.DateColumn("Day", format="ddd D MMM"),
+    "month": st.column_config.TextColumn("Month"),
+    "km": st.column_config.NumberColumn("km", format="%.1f"),
+    "minutes": st.column_config.NumberColumn("Minutes", format="%.0f"),
+    "avg_kmh": st.column_config.NumberColumn("Avg km/h", format="%.0f"),
+    "soc_start": st.column_config.NumberColumn("SoC start", format="%.0f %%"),
+    "soc_end": st.column_config.NumberColumn("SoC end", format="%.0f %%"),
+    "kwh": st.column_config.NumberColumn("kWh (est.)", format="%.1f"),
+    "kwh_per_100km": st.column_config.NumberColumn("kWh/100 km (est.)", format="%.1f"),
+    "kwh_from_soc": st.column_config.NumberColumn("kWh from SoC", format="%.1f"),
+    "kwh_from_power": st.column_config.NumberColumn("kWh from power", format="%.1f"),
+    "peak_kw": st.column_config.NumberColumn("Peak kW", format="%.1f"),
+    "type": st.column_config.TextColumn("Type"),
+    "median_amps": st.column_config.NumberColumn("Median A", format="%.0f"),
+    "partial": st.column_config.CheckboxColumn("Start missed"),
+    "location": st.column_config.TextColumn("Location"),
+    "fee": st.column_config.NumberColumn("Session fee", format="€%.2f"),
+    "price_per_kwh": st.column_config.NumberColumn("€/kWh", format="€%.2f"),
+    "cost": st.column_config.NumberColumn("Cost", format="€%.2f"),
+    "cost_cheapest": st.column_config.NumberColumn("At cheapest rate", format="€%.2f"),
+    "saving": st.column_config.NumberColumn("Missed saving", format="€%.2f"),
+    "manual": st.column_config.CheckboxColumn("Entered manually"),
+    "sessions": st.column_config.NumberColumn("Sessions"),
+    "cost_per_100km": st.column_config.NumberColumn("Cost per 100 km", format="€%.2f"),
+    "co2_kg": st.column_config.NumberColumn("CO2 (kg)", format="%.1f"),
+    "co2_g_per_km": st.column_config.NumberColumn("CO2 (g/km)", format="%.0f"),
+    "aqi_avg": st.column_config.NumberColumn("Air index, mean", format="%.1f"),
+    "aqi_max": st.column_config.NumberColumn("Air index, max", format="%.0f"),
+    "pm25_min": st.column_config.NumberColumn("PM2.5 min", format="%.0f"),
+    "pm25_avg": st.column_config.NumberColumn("PM2.5 mean", format="%.1f"),
+    "pm25_max": st.column_config.NumberColumn("PM2.5 max", format="%.0f"),
+    "readings": st.column_config.NumberColumn("Readings"),
+    "valid": st.column_config.CheckboxColumn("Valid"),
+    "time there (h)": st.column_config.NumberColumn("Time there (h)", format="%.0f"),
+    "arrivals": st.column_config.NumberColumn("Arrivals"),
+    "km driven to": st.column_config.NumberColumn("km driven to", format="%.0f"),
+    "% of time": st.column_config.ProgressColumn("Share of time", min_value=0, max_value=100, format="%.0f %%"),
+}
+
+
+def table(df):
+    """st.dataframe with the shared column labels and number formats."""
+    st.dataframe(df, hide_index=True, width="stretch", column_config={c: COLUMNS[c] for c in df.columns if c in COLUMNS})
 
 
 def empty(msg, icon=":material/hourglass_empty:"):

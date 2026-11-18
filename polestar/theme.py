@@ -5,9 +5,12 @@ import streamlit as st
 
 # Polestar orange: RAL 2000 (#ED760E) on light surfaces, brand #FF7500 on dark.
 LIGHT = {"series": "#ED760E", "good": "#1baf7a", "ink": "#0b0b0b", "muted": "#53565A", "grid": "rgba(83,86,90,0.15)", "low": "#e34948", "high": "#eda100",
-         "baseline": "#75787B", "faint": "#C8C9C7"}   # brand Grey 9 / Grey 3: comparison and background series
-DARK = {"series": "#FF7500", "good": "#199e70", "ink": "#f0efec", "muted": "#C8C9C7", "grid": "rgba(200,201,199,0.15)", "low": "#e66767", "high": "#c98500",
-        "baseline": "#B1B3B3", "faint": "#53565A"}   # brand Grey 5 / Grey 11
+         "baseline": "#75787B", "faint": "#C8C9C7",   # brand Grey 9 / Grey 3: comparison and background series
+         "surface": "#fcfcfb"}                        # page background (.streamlit/config.toml), for rings around marks
+# dark low/high re-stepped so the amber and red bands stay apart for normal vision (dataviz validator, ΔE 16)
+DARK = {"series": "#FF7500", "good": "#199e70", "ink": "#f0efec", "muted": "#C8C9C7", "grid": "rgba(200,201,199,0.15)", "low": "#e05a5a", "high": "#b38f00",
+        "baseline": "#B1B3B3", "faint": "#53565A",   # brand Grey 5 / Grey 11
+        "surface": "#1a1a19"}
 
 FONT = "Inter, Helvetica Neue, Helvetica, Arial, sans-serif"  # Unica77 is Helvetica-derived
 
@@ -33,6 +36,10 @@ h1 { font-weight: 650; }
 /* keep nested metric columns two-per-row on phones instead of one tall stack */
 @media (max-width: 640px) {
   [data-testid="stColumn"] [data-testid="stHorizontalBlock"] [data-testid="stColumn"] {
+    min-width: calc(50% - 1rem) !important; flex: 1 1 calc(50% - 1rem) !important;
+  }
+  /* the same for the top-level metric rows of the other tabs (the hero card's own columns still stack) */
+  [data-testid="stHorizontalBlock"]:not(.st-key-hero *):has([data-testid="stMetric"]) > [data-testid="stColumn"] {
     min-width: calc(50% - 1rem) !important; flex: 1 1 calc(50% - 1rem) !important;
   }
 }
