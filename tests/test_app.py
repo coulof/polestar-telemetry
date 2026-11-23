@@ -112,6 +112,24 @@ def test_cost_can_be_set_and_reset_once_unlocked(app, demo_db):
     assert [b for b in at.button if b.label == "Unlock"] and not [b for b in at.button if b.label == "Save"]
 
 
+def test_location_can_be_set_and_reset_once_unlocked(app, demo_db):
+    at = app.run()
+    assert not [s for s in at.selectbox if s.label == "Location"]            # locked: no location picker
+    at = unlock(at)
+    pick = next(s for s in at.selectbox if s.label == "Location")
+    pick.set_value("Other place…").run()
+    next(t for t in at.text_input if t.label == "Name").set_value("Roadside charger").run()
+    next(b for b in at.button if b.label == "Save location").click().run()
+    assert not at.exception
+    with collect.connect(demo_db) as db:
+        assert list(costs.load_locations(db).values()) == ["Roadside charger"]
+    assert any("Roadside charger (set manually)" in c.value for c in at.caption)
+    next(b for b in at.button if b.label == "Use detected").click().run()
+    assert not at.exception
+    with collect.connect(demo_db) as db:
+        assert costs.load_locations(db) == {}
+
+
 def test_report_tab_warns_about_a_failed_weekly_report(app, demo_db):
     with collect.connect(demo_db) as db:
         report.record_failure(db, "2026-W99", "failed while asking Claude (exit 1)")

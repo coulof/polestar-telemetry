@@ -42,6 +42,11 @@ def manual_costs():
         return costs.load(db)
 
 
+def manual_locations():
+    with closing(connect(DB_PATH)) as db:
+        return costs.load_locations(db)
+
+
 def battery_kwh():
     return st.session_state.get("battery_kwh", derive.BATTERY_KWH)
 
@@ -88,7 +93,7 @@ def now_tab():
                             unsafe_allow_html=True)
             if charging:
                 sessions = derive.price_sessions(derive.charge_sessions(battery, battery_kwh()), location, cfg, battery,
-                                                 manual=manual_costs())
+                                                 manual=manual_costs(), locations=manual_locations())
                 cur = sessions.iloc[-1] if not sessions.empty else None
                 c = st.columns(3)
                 c[0].metric("Power", f"{(b.get('chargingPowerWatts') or 0) / 1000:.1f} kW",
@@ -165,7 +170,7 @@ if period_days and not trip_table.empty:
     trip_table = trip_table[trip_table["start"] >= cutoff]
 if period_days and not sessions.empty:
     sessions = sessions[sessions["start"] >= cutoff]
-sessions = derive.price_sessions(sessions, location, config.load(), battery, manual=manual_costs())
+sessions = derive.price_sessions(sessions, location, config.load(), battery, manual=manual_costs(), locations=manual_locations())
 
 MOCK = os.environ.get("POLESTAR_MOCK") == "1"   # design mock-up on synthetic data, never on the server
 REPORT_ON = config.load()["report"]["enabled"]   # [report] enabled = false hides the Claude integration
@@ -265,7 +270,7 @@ with tab_charge:
         cw["kw"] = pd.to_numeric(cw.get("chargingPowerWatts"), errors="coerce") / 1000
         st.plotly_chart(line_chart(cw, "time", "kw", "Charging power", "kW", mode="lines+markers", step=True),
                         width="stretch")
-        place = s["location"] if isinstance(s["location"], str) else "unpriced location"
+        place = (s["location"] if isinstance(s["location"], str) else "unpriced location") + (" (set manually)" if s["location_manual"] else "")
         cost = ("cost unknown" if pd.isna(s["cost"]) else f"€{s['cost']:.2f} (entered manually)" if s["manual"]
                 else f"€{s['cost']:.2f} at €{s['price_per_kwh']:.2f}/kWh" + (f" + €{s['fee']:.2f} session fee" if s["fee"] else ""))
         if s["partial"]:
@@ -277,7 +282,7 @@ with tab_charge:
         st.caption(f"SoC {s['soc_start']:.0f} → {s['soc_end']:.0f} %, "
                    f"{s['kwh_from_power']:.1f} kWh from power / {s['kwh_from_soc']:.1f} kWh from SoC. "
                    f"{place}: {cost}.")
-        with st.expander("Set the cost manually", expanded=bool(s["manual"])):
+        with st.expander("Correct the location or cost", expanded=bool(s["manual"] or s["location_manual"])):
             if not admin.configured():
                 st.caption(":material/lock: Editing is off. Set `ADMIN_PASSWORD` in `.env` and restart to enable it.")
             elif not admin.unlocked(st.session_state):
@@ -291,6 +296,33 @@ with tab_charge:
                             st.rerun()
             else:
                 sk = costs.key(s["start"])
+                names = [x["name"] for x in config.load()["locations"]]
+                other = "Other place…"
+                cur = s["location"] if isinstance(s["location"], str) else None
+                opts = names + [other]
+                l1, l2, l3, l4 = st.columns([1, 1, 1, 1], vertical_alignment="bottom")
+                pick = l1.selectbox("Location", opts, key=f"loc_{sk}", placeholder="Choose a place",
+                                    index=opts.index(cur) if cur in names else (len(names) if cur else None),
+                                    help="Where this session really was. A place from config.toml re-prices the estimate with "
+                                         "its tariff and session fee; any other name is a label priced at the default price. "
+                                         "A cost you enter below still wins.")
+                label = l2.text_input("Name", value=cur if cur and cur not in names else "", key=f"locname_{sk}",
+                                      max_chars=costs.MAX_LOCATION, disabled=pick != other, placeholder="e.g. Ionity A7")
+                if l3.button("Save location", key=f"saveloc_{sk}", width="stretch", disabled=pick is None) and admin.unlocked(st.session_state):
+                    try:
+                        with closing(connect(DB_PATH)) as wdb:
+                            costs.set_location(wdb, sk, label if pick == other else pick)
+                    except ValueError as e:
+                        st.error(str(e))
+                    else:
+                        st.session_state.pop(f"cost_{sk}", None)     # the amount field shows the new estimate
+                        st.rerun()
+                if l4.button("Use detected", key=f"resetloc_{sk}", width="stretch", disabled=not s["location_manual"]) and admin.unlocked(st.session_state):
+                    with closing(connect(DB_PATH)) as wdb:
+                        costs.clear_location(wdb, sk)
+                    for k in (f"loc_{sk}", f"locname_{sk}", f"cost_{sk}"):
+                        st.session_state.pop(k, None)
+                    st.rerun()
                 c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
                 amount = c1.number_input("Total paid (€)", min_value=0.0, step=0.5, format="%.2f", key=f"cost_{sk}",
                                          value=float(s["cost"]) if pd.notna(s["cost"]) else 0.0,

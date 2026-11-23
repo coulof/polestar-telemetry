@@ -191,6 +191,7 @@ COLUMNS = {   # readable headers and units for the tables; keys are the data fra
     "median_amps": st.column_config.NumberColumn("Median A", format="%.0f"),
     "partial": st.column_config.CheckboxColumn("Start missed"),
     "location": st.column_config.TextColumn("Location"),
+    "location_manual": st.column_config.CheckboxColumn("Location set manually"),
     "fee": st.column_config.NumberColumn("Session fee", format="€%.2f"),
     "price_per_kwh": st.column_config.NumberColumn("€/kWh", format="€%.2f"),
     "cost": st.column_config.NumberColumn("Cost", format="€%.2f"),

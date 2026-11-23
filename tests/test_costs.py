@@ -70,3 +70,36 @@ def test_a_manual_cost_works_for_an_unpriced_place(cfg):
     nocfg = {**cfg, "default_price": None}                # estimate unknown (NaN) until the owner enters a cost
     assert pd.isna(derive.price_sessions(s, pd.DataFrame(), nocfg, b).loc[0, "cost"])
     assert derive.price_sessions(s, pd.DataFrame(), nocfg, b, manual={costs.key(s.loc[0, "start"]): 7.5}).loc[0, "cost"] == 7.5
+
+
+def test_location_set_replace_and_clear_roundtrip(db):
+    costs.set_location(db, 1000, "  Ionity   A7 ")                 # spaces are tidied
+    costs.set_location(db, 2000, "Work")
+    costs.set_location(db, 2000, "Home")                           # a second save replaces the first
+    assert costs.load_locations(db) == {1000: "Ionity A7", 2000: "Home"}
+    costs.clear_location(db, 1000)
+    assert costs.load_locations(db) == {2000: "Home"}
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "x" * 41])
+def test_invalid_locations_are_rejected(db, bad):
+    with pytest.raises(ValueError):
+        costs.set_location(db, 1000, bad)
+    assert costs.load_locations(db) == {}
+
+
+def test_a_configured_location_reprices_the_session_and_a_free_name_is_only_a_label(cfg):
+    b = battery()
+    s = derive.charge_sessions(b)
+    k = costs.key(s.loc[0, "start"])
+    work = {"name": "Work", "lat": 0.0, "lon": 0.0, "radius_m": 100, "price_per_kwh": 0.10, "session_fee": 1.0}
+    c = {**cfg, "locations": [work]}
+    out = derive.price_sessions(s, pd.DataFrame(), c, b, locations={k: "Work"})
+    assert out.loc[0, "location"] == "Work" and out.loc[0, "location_manual"]
+    assert out.loc[0, "cost"] == pytest.approx(out.loc[0, "kwh_from_power"] * 0.10 + 1.0) and out.loc[0, "fee"] == 1.0
+    out = derive.price_sessions(s, pd.DataFrame(), c, b, locations={k: "Ionity A7"})
+    assert out.loc[0, "location"] == "Ionity A7" and out.loc[0, "fee"] == 0
+    assert out.loc[0, "cost"] == pytest.approx(out.loc[0, "kwh_from_power"] * 0.25)     # the default price
+    out = derive.price_sessions(s, pd.DataFrame(), c, b, manual={k: 3.0}, locations={k: "Work"})
+    assert out.loc[0, "cost"] == 3.0 and out.loc[0, "location"] == "Work"               # an entered cost still wins
+    assert not derive.price_sessions(s, pd.DataFrame(), c, b).loc[0, "location_manual"]

@@ -46,6 +46,11 @@ erDiagram
         REAL cost "EUR paid, replaces the estimate"
         TEXT updated_at
     }
+    session_locations {
+        INTEGER start_ts PK "charge session start, epoch seconds UTC"
+        TEXT location "config.toml location name or any label"
+        TEXT updated_at
+    }
     place_labels {
         TEXT seed PK "first parked position, lat,lon to 4 decimals"
         TEXT label "name shown on the Path tab"
@@ -55,6 +60,7 @@ erDiagram
     snapshots ||--o{ readings : "view: domain = battery"
     reports |o..o| report_failures : "same week; a stored report clears the failure"
     snapshots }o..o| session_costs : "derived charge session starts at start_ts"
+    snapshots }o..o| session_locations : "derived charge session starts at start_ts"
     snapshots }o..o| place_labels : "derived place starts at seed"
 ```
 
@@ -69,6 +75,7 @@ Solid lines are real (the `readings` view selects from `snapshots`). Dotted line
 | `reports` | `deploy/weekly-report.sh` (`report.store`) | The weekly summary and the aggregates it was written from. No VIN or coordinates. |
 | `report_failures` | the same script (`report.record_failure`) | A week whose report could not be written; shown as a warning on the Report tab until that week has a report. |
 | `session_costs` | dashboard, behind the admin password (`costs.py`) | What you actually paid for a charge session, which replaces the tariff estimate. |
+| `session_locations` | dashboard, behind the admin password (`costs.py`) | Where a charge session really was, which replaces the detected place: a `config.toml` location name (priced with its tariff and fee) or any other label (priced at the default price). |
 | `place_labels` | dashboard, behind the admin password (`place_labels.py`) | A name for a place the Path tab grouped automatically. |
 
 `readings` is a convenience view over the battery snapshots for ad-hoc SQL. The dashboard does not use it.
@@ -84,7 +91,7 @@ Solid lines are real (the `readings` view selects from `snapshots`). Dotted line
 
 ## Keys that outlive the data
 
-- **`session_costs.start_ts`** is the charge session's start as whole epoch seconds. Sessions are rebuilt from snapshots each time, so the start is the only stable identity they have. If a late event moved a session's start, its correction would no longer match.
+- **`session_costs.start_ts`** and **`session_locations.start_ts`** are the charge session's start as whole epoch seconds. Sessions are rebuilt from snapshots each time, so the start is the only stable identity they have. If a late event moved a session's start, its corrections would no longer match.
 - **`place_labels.seed`** is the rounded position of a place's first reading. The automatic "Place 1", "Place 2" numbers move as history grows, but the first reading of a place never changes.
 
 ## Privacy

@@ -28,3 +28,30 @@ def clear(db, start_ts):
     """Drop a correction: the session goes back to its tariff estimate."""
     db.execute("DELETE FROM session_costs WHERE start_ts = ?", (int(start_ts),))
     db.commit()
+
+
+MAX_LOCATION = 40
+
+
+def load_locations(db):
+    """{start_ts: location name} of every session whose location was set by hand."""
+    return {int(ts): name for ts, name in db.execute("SELECT start_ts, location FROM session_locations")}
+
+
+def set_location(db, start_ts, name):
+    """Say where the session really was: a config.toml location name (then priced with its tariff and fee) or any
+    other label (priced at the default price). Replaces an earlier one."""
+    name = " ".join(str(name).split())
+    if not name:
+        raise ValueError("the location cannot be empty")
+    if len(name) > MAX_LOCATION:
+        raise ValueError(f"the location can have at most {MAX_LOCATION} characters")
+    db.execute("INSERT OR REPLACE INTO session_locations (start_ts, location, updated_at) VALUES (?,?,?)",
+               (int(start_ts), name, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")))
+    db.commit()
+
+
+def clear_location(db, start_ts):
+    """Drop a location: the session goes back to the one detected from the car's last position."""
+    db.execute("DELETE FROM session_locations WHERE start_ts = ?", (int(start_ts),))
+    db.commit()

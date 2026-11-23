@@ -219,7 +219,7 @@ def _tou_cost(readings, loc, tz):
     return cost, cheapest
 
 
-def price_sessions(sessions, location, cfg, battery=None, manual=None):
+def price_sessions(sessions, location, cfg, battery=None, manual=None, locations=None):
     """Add location, price_per_kwh, fee and cost (EUR) to charge sessions. cost = energy + the location's
     optional `session_fee` (fixed amount per session); price_per_kwh is the energy price only.
 
@@ -228,7 +228,11 @@ def price_sessions(sessions, location, cfg, battery=None, manual=None):
     then the effective average.
 
     `manual` ({start epoch seconds: total paid}, see costs.py) replaces the estimate of those sessions:
-    cost is the amount entered, there is no saving to show, and `manual` is True."""
+    cost is the amount entered, there is no saving to show, and `manual` is True.
+
+    `locations` ({start epoch seconds: name}, see costs.py) overrides the detected place: a config.toml location
+    name is priced with its tariff and fee, any other name is a label priced at the default price;
+    `location_manual` is then True."""
     out = sessions.copy()
     lat_col, lon_col = "coordinate.latitude", "coordinate.longitude"
     if len(out) and not location.empty and lat_col in location:
@@ -236,10 +240,13 @@ def price_sessions(sessions, location, cfg, battery=None, manual=None):
         locs = [config.match(cfg, la, lo) for la, lo in zip(pos[lat_col], pos[lon_col])]
     else:
         locs = [None] * len(out)
+    set_by_hand = [(locations or {}).get(int(t.timestamp())) for t in out["start"]]
+    by_name = {x["name"]: x for x in cfg["locations"]}
+    locs = [by_name.get(n) if n else loc for n, loc in zip(set_by_hand, locs)]
     tz = cfg.get("timezone", "Europe/Paris")
     names, prices, costs, cheapest_costs, fees = [], [], [], [], []
-    for (_, sess), loc in zip(out.iterrows(), locs):
-        name = loc["name"] if loc else None
+    for (_, sess), loc, label in zip(out.iterrows(), locs, set_by_hand):
+        name = label or (loc["name"] if loc else None)
         price = loc["price_per_kwh"] if loc else cfg["default_price"]
         cost = sess["kwh_from_power"] * price if price is not None else float("nan")
         cheapest = cost          # no tariff windows: nothing cheaper to compare with
@@ -257,6 +264,7 @@ def price_sessions(sessions, location, cfg, battery=None, manual=None):
         cheapest_costs.append(cheapest)
         fees.append(fee)
     out["location"] = names
+    out["location_manual"] = pd.Series([n is not None for n in set_by_hand], index=out.index, dtype=bool)
     out["fee"] = pd.Series(fees, index=out.index, dtype=float)
     out["price_per_kwh"] = pd.to_numeric(pd.Series(prices, index=out.index), errors="coerce")
     out["cost"] = pd.Series(costs, index=out.index, dtype=float)

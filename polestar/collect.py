@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS session_costs (
     updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS session_locations (
+    start_ts INTEGER PRIMARY KEY,   -- charge session start, epoch seconds UTC
+    location TEXT NOT NULL,         -- where it really was: a config.toml location name (priced) or any label
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS place_labels (
     seed TEXT PRIMARY KEY,          -- the first parked position of a place, "lat,lon" rounded to 4 decimals
     label TEXT NOT NULL,            -- the name shown on the Path tab
