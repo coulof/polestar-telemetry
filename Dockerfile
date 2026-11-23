@@ -1,4 +1,4 @@
-FROM docker.io/library/python:3.13-slim
+FROM docker.io/library/python:3.15-slim
 COPY --from=ghcr.io/astral-sh/uv:0.9 /uv /usr/local/bin/uv
 
 WORKDIR /app
