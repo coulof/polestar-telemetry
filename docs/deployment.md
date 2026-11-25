@@ -102,7 +102,7 @@ deploy/update.sh      # runs the tests, git pull --ff-only, rebuilds the images,
 
 ## Claude reports (Claude Code CLI)
 
-Weekly, monthly, quarterly and yearly reports are written by the Claude Code CLI (`claude -p`, your subscription login, no API key), one per calendar period once it ends. The container has no CLI, so a daily host-side timer runs [`deploy/report.sh`](../deploy/report.sh): for every last full week, month, quarter and year that has no report yet, it asks the collector container for the prompt, pipes it to `claude` (text only: no tools, skills or MCP), and stores the answer through the container. Only aggregated figures are sent, never the VIN or coordinates. Install on the host, which needs the `claude` CLI logged in:
+Weekly, monthly, quarterly and yearly reports are written by the Claude Code CLI (`claude -p`, your subscription login, no API key), one per calendar period once it ends. The container has no CLI, so a daily host-side timer runs [`deploy/report.sh`](../deploy/report.sh): for every last full week, month, quarter and year that has data and no report yet, it asks the collector container for the prompt, pipes it to `claude` (text only: no tools, skills or MCP), and stores the answer through the container. A second call then grades each new report from 1 to 10 (the dashboard's All view shows the best of each kind); a failed grading is retried on the next daily run. Only aggregated figures are sent, never the VIN or coordinates. Install on the host, which needs the `claude` CLI logged in:
 
 ```sh
 cp deploy/polestar-report.{service,timer} ~/.config/systemd/user/

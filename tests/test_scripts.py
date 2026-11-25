@@ -13,6 +13,9 @@ echo "podman $*" >> "$LOG"
 [ "${PODMAN_FAIL:-}" = 1 ] && exit 1
 case "$*" in
   *--due*) printf '2026-W20\n2026-10\n' ;;
+  *--ungraded*) echo "${UNGRADED:-}" ;;
+  *--judge-prompt*) echo "JUDGE ${@: -1}" ;;
+  *--store-grade*) echo "stdin: $(cat)" >> "$LOG" ;;
   *--exists*) exit 1 ;;
   *--prompt*) echo "PROMPT ${@: -1}" ;;
   *polestar.freshness*) echo "${FRESH_AGE:-60}" ;;
@@ -26,6 +29,10 @@ FAKE_CLAUDE = r"""#!/usr/bin/env bash
 in="$(cat)"
 [ "${CLAUDE_FAIL:-}" = 1 ] && exit 1
 [ -n "${CLAUDE_FAIL_ID:-}" ] && [[ "$in" == *"$CLAUDE_FAIL_ID"* ]] && exit 1
+if [[ "$in" == JUDGE* ]]; then
+  [ "${JUDGE_FAIL:-}" = 1 ] && exit 1
+  echo '{"score": 7, "reason": "Sharp."}'; exit 0
+fi
 [ "${CLAUDE_EMPTY:-}" = 1 ] && exit 0
 echo "## A week"
 """
@@ -54,6 +61,24 @@ def test_report_success_stores_and_does_not_notify(env):
     r, log = env("report.sh", NOTIFY_URL="https://ntfy.test/topic")
     assert r.returncode == 0
     assert "--store 2026-W20" in log and "--store 2026-10" in log and "curl" not in log and "--failed" not in log
+
+
+def test_each_stored_report_is_graded(env):
+    r, log = env("report.sh")
+    assert r.returncode == 0
+    assert "--store-grade 2026-W20" in log and "--store-grade 2026-10" in log and '"score": 7' in log
+    assert log.index("--store 2026-W20") < log.index("--store-grade 2026-W20")
+
+
+def test_a_grading_failure_keeps_the_report_and_is_not_notified(env):
+    r, log = env("report.sh", NOTIFY_URL="https://ntfy.test/topic", JUDGE_FAIL="1")
+    assert r.returncode == 0 and "--store 2026-W20" in log and "--store-grade" not in log
+    assert "could not grade 2026-W20" in r.stderr and "curl" not in log and "--failed" not in log
+
+
+def test_ungraded_reports_are_graded_on_the_daily_run(env):
+    r, log = env("report.sh", UNGRADED="2026-W18")
+    assert r.returncode == 0 and "--store-grade 2026-W18" in log
 
 
 def test_one_period_failing_does_not_stop_the_others(env):

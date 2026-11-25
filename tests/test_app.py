@@ -147,7 +147,7 @@ def test_report_tab_warns_about_a_failed_report_of_the_period_kind(app, demo_db)
 
 def test_report_tab_follows_the_period(app, demo_db):
     with collect.connect(demo_db) as db:
-        report.store(db, "2026-W40", "## A test week", {}, "sonnet")
+        report.store(db, "2026-W40", "## A test week", {"driving": {"trips": 1}}, "sonnet")
         report.store(db, "2026-Q3", "## A test quarter", {}, "sonnet")
     try:
         at = app.run()
@@ -158,6 +158,13 @@ def test_report_tab_follows_the_period(app, demo_db):
         assert any("A test quarter" in m.value for m in at.markdown) and not any("A test week" in m.value for m in at.markdown)
         at.segmented_control(key="period").set_value(0).run()                     # All: the latest of each kind
         assert any("A test week" in m.value for m in at.markdown) and any("A test quarter" in m.value for m in at.markdown)
+        with collect.connect(demo_db) as db:
+            report.store(db, "2026-W41", "## A better week", {"driving": {"trips": 2}}, "sonnet")
+            report.store_grade(db, "2026-W41", 9, "Spots the peak-rate habit.")
+            report.store_grade(db, "2026-W40", 5, "Flat.")
+        at.segmented_control(key="period").set_value(0).run()                     # All: the best graded week wins
+        assert any("A better week" in m.value for m in at.markdown) and not any("A test week" in m.value for m in at.markdown)
+        assert any("Best week" in c.value and "9/10: Spots the peak-rate habit." in c.value for c in at.caption)
         at.segmented_control(key="period").set_value(1).run()
         assert any("Reports start at 7 days" in c.value for c in at.caption)
         assert not at.exception

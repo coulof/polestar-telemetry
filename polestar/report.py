@@ -9,6 +9,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -40,6 +41,22 @@ JSON:
 ADJ = {"week": "weekly", "month": "monthly", "quarter": "quarterly", "year": "yearly"}
 TREND = " Use by_month to point out the trend across the months."
 
+JUDGE_PROMPT = """You grade a short %(adj)s report written for the owner of a Polestar 2 from the JSON summary below. \
+Score it from 1 to 10 for how much it is worth reading, weighing equally:
+- insight: it points out something useful or non-obvious (a cost lever, an anomaly, a habit worth changing);
+- trend: it compares with the previous %(unit)s, or across months when by_month is given;
+- fun: a strong headline, some wit, no filler.
+Any figure that the JSON does not support, directly or by simple arithmetic, caps the score at 3.
+
+Answer with JSON only, no other text: {"score": <integer 1-10>, "reason": "<one sentence, at most 25 words>"}
+
+REPORT:
+%(markdown)s
+
+JSON:
+%(json)s
+"""
+
 CLAUDE_FLAGS = ["-p", "--tools", "", "--disable-slash-commands", "--strict-mcp-config",
                 "--no-session-persistence", "--output-format", "text"]
 
@@ -48,6 +65,50 @@ def build_prompt(period_stats):
     kind = period_stats.get("kind", "week")
     return PROMPT % {"adj": ADJ[kind], "unit": kind, "trend": TREND if "by_month" in period_stats else "",
                      "json": json.dumps(period_stats, indent=2)}
+
+
+def has_data(period_stats):
+    """The data gate: a period with no trips and no charge sessions gets no report and is never the best."""
+    return bool((period_stats.get("driving") or {}).get("trips") or (period_stats.get("charging") or {}).get("sessions"))
+
+
+def judge_prompt(db, pid):
+    r = get(db, pid)
+    st_ = json.loads(r["stats"])
+    kind = stats.kind_of(pid)
+    return JUDGE_PROMPT % {"adj": ADJ[kind], "unit": kind, "markdown": r["markdown"], "json": json.dumps(st_, indent=2)}
+
+
+def parse_grade(text):
+    """(score 1-10, reason) from the judge's answer; raises ValueError when it holds no usable grade."""
+    m = re.search(r"\{.*?\}", text or "", re.S)
+    if not m:
+        raise ValueError("no JSON object in the answer")
+    g = json.loads(m.group(0))
+    score = max(1, min(10, int(round(float(g["score"])))))
+    return score, " ".join(str(g.get("reason", "")).split())[:200]
+
+
+def store_grade(db, pid, score, reason):
+    db.execute("UPDATE reports SET score = ?, score_note = ? WHERE week = ?", (score, reason, pid))
+    db.commit()
+
+
+def ungraded(db):
+    return [r[0] for r in db.execute("SELECT week FROM reports WHERE score IS NULL ORDER BY week")]
+
+
+def best(db, kind):
+    """The best report of `kind` as {week, score, score_note}: the highest grade among reports that pass the data gate,
+    the newest on a tie. Without any grade, the latest report with score None. None when there is no report."""
+    reports = list_reports(db, kind)
+    if not reports:
+        return None
+    rows = {w: (sc, note, st_) for w, sc, note, st_ in db.execute("SELECT week, score, score_note, stats FROM reports")}
+    graded = [r for r in reports if rows[r["week"]][0] is not None and has_data(json.loads(rows[r["week"]][2]))]
+    pick = max(graded, key=lambda r: rows[r["week"]][0]) if graded else reports[0]   # reports are newest first: max keeps the first
+    return {"week": pick["week"], "score": rows[pick["week"]][0] if graded else None,
+            "score_note": rows[pick["week"]][1] if graded else None}
 
 
 def exists(db, week):
@@ -98,13 +159,15 @@ def list_weeks(db):
 
 
 def due(db, now):
-    """Ids of the last full week, month, quarter and year that have no report yet."""
-    return [pid for pid in (stats.last_full(k, now) for k in stats.KINDS) if not exists(db, pid)]
+    """Ids of the last full week, month, quarter and year that have no report yet and have data (see has_data)."""
+    return [pid for pid in (stats.last_full(k, now) for k in stats.KINDS)
+            if not exists(db, pid) and has_data(stats.summary(db, pid))]
 
 
 def get(db, week):
-    row = db.execute("SELECT week, created_at, model, markdown, stats FROM reports WHERE week = ?", (week,)).fetchone()
-    return dict(zip(("week", "created_at", "model", "markdown", "stats"), row)) if row else None
+    row = db.execute("SELECT week, created_at, model, markdown, stats, score, score_note FROM reports WHERE week = ?",
+                     (week,)).fetchone()
+    return dict(zip(("week", "created_at", "model", "markdown", "stats", "score", "score_note"), row)) if row else None
 
 
 def run_claude(prompt, model, claude_bin=None, timeout=300):
@@ -141,6 +204,9 @@ def main():
     g.add_argument("--week-id", action="store_true", help="print the last full ISO week id")
     g.add_argument("--due", action="store_true", help="print the ids of the last full week, month, quarter and year "
                                                       "that have no report yet, one per line")
+    g.add_argument("--ungraded", action="store_true", help="print the ids of stored reports that have no grade yet")
+    g.add_argument("--judge-prompt", metavar="ID", help="print the grading prompt for period ID's stored report")
+    g.add_argument("--store-grade", metavar="ID", help="store the judge's JSON answer read from stdin as period ID's grade")
     g.add_argument("--exists", metavar="ID", help="exit 0 if a report for period ID is stored, else 1")
     g.add_argument("--prompt", metavar="ID", help="print the prompt (stats included) for period ID")
     g.add_argument("--store", metavar="ID", help="store markdown read from stdin as period ID's report")
@@ -156,6 +222,17 @@ def main():
         print(_default_week())
     elif args.due:
         print("\n".join(due(db, _now())))
+    elif args.ungraded:
+        print("\n".join(ungraded(db)))
+    elif args.judge_prompt:
+        print(judge_prompt(db, args.judge_prompt))
+    elif args.store_grade:
+        try:
+            score, reason = parse_grade(sys.stdin.read())
+        except (ValueError, KeyError, TypeError) as e:
+            sys.exit(f"unusable grade: {e}")
+        store_grade(db, args.store_grade, score, reason)
+        print(f"graded {args.store_grade}: {score}/10")
     elif args.exists:
         sys.exit(0 if exists(db, args.exists) else 1)
     elif args.prompt:

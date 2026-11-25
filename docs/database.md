@@ -72,7 +72,7 @@ Solid lines are real (the `readings` view selects from `snapshots`). Dotted line
 |---|---|---|
 | `snapshots` | collector (`collect.store`) | One row per telemetry event, the payload untouched. Deduplicated on `(vin, domain, event_id)`, so a poll that sees nothing new inserts nothing. Indexed on `(vin, domain, ts)`. |
 | `poll_status` | collector (`collect_once`) | A single row: the time of the last poll that fetched data. Liveness comes from this, not from the newest event, because a parked car sends nothing for hours. |
-| `reports` | `deploy/report.sh` (`report.store`) | The Claude summaries, one per period id (`week` column: `2026-W47`, `2026-11`, `2026-Q4` or `2026`), and the aggregates each was written from. No VIN or coordinates. |
+| `reports` | `deploy/report.sh` (`report.store`, `report.store_grade`) | The Claude summaries, one per period id (`week` column: `2026-W47`, `2026-11`, `2026-Q4` or `2026`), the aggregates each was written from, and Claude's grade (`score` 1-10, `score_note`). No VIN or coordinates. |
 | `report_failures` | the same script (`report.record_failure`) | A week whose report could not be written; shown as a warning on the Report tab until that week has a report. |
 | `session_costs` | dashboard, behind the admin password (`costs.py`) | What you actually paid for a charge session, which replaces the tariff estimate. |
 | `session_locations` | dashboard, behind the admin password (`costs.py`) | Where a charge session really was, which replaces the detected place: a `config.toml` location name (priced with its tariff and fee) or any other label (priced at the default price). |

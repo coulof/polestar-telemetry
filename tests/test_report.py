@@ -86,7 +86,7 @@ def test_reports_are_listed_by_kind_and_due_skips_stored_ones(db):
     assert [r["week"] for r in report.list_reports(db, "month")] == ["2026-05"]
     report.record_failure(db, "2026-06", "failed while asking Claude")
     assert report.latest_failure(db, "week") is None and report.latest_failure(db, "month")["week"] == "2026-06"
-    assert report.due(db, dt.datetime(2026, 7, 2, 9)) == ["2026-W26", "2026-06", "2025"]   # Q2 already stored
+    assert report.due(db, dt.datetime(2026, 7, 2, 9)) == []   # Q2 is stored; W26, June and 2025 have no data
 
 
 def test_weekly_stats_contents_and_privacy(db):
@@ -165,3 +165,50 @@ def test_cli_failure_is_reported(db, tmp_path, monkeypatch):
     with pytest.raises(RuntimeError):
         report.generate(db, "2026-W20")
     assert not report.exists(db, "2026-W20")
+
+
+def test_parse_grade_reads_clamps_and_rejects():
+    assert report.parse_grade('{"score": 8, "reason": "Spots the  peak-rate habit."}') == (8, "Spots the peak-rate habit.")
+    assert report.parse_grade('Sure:\n{"score": 14, "reason": "x"}\nthanks')[0] == 10      # JSON inside prose, clamped
+    assert report.parse_grade('{"score": 0.4, "reason": "x"}')[0] == 1
+    for bad in ("", "no json here", '{"reason": "missing score"}', '{"score": "high"}'):
+        with pytest.raises((ValueError, KeyError)):
+            report.parse_grade(bad)
+
+
+def test_due_skips_periods_without_data(db):
+    # W20 has the fixture's trip and charge; W21, June, Q2... the quarter and year have data too, 2025 does not
+    now = dt.datetime(2026, 7, 2, 9)
+    assert report.due(db, now) == ["2026-Q2"]                  # W26, June and 2025 hold no trips and no sessions
+    assert report.has_data({"driving": {"trips": 0}, "charging": {"sessions": 1}})
+    assert not report.has_data({"driving": {"trips": 0}, "charging": {"sessions": 0}})
+
+
+def test_best_picks_the_highest_grade_with_data(db):
+    full = {"driving": {"trips": 3}, "charging": {"sessions": 1}}
+    empty = {"driving": {"trips": 0}, "charging": {"sessions": 0}}
+    for pid, st_ in (("2026-W18", full), ("2026-W19", full), ("2026-W20", full), ("2026-W21", empty)):
+        report.store(db, pid, "## x", st_, "sonnet")
+    assert report.best(db, "week") == {"week": "2026-W21", "score": None, "score_note": None}   # nothing graded: latest
+    report.store_grade(db, "2026-W18", 8, "Good")
+    report.store_grade(db, "2026-W19", 6, "Fine")
+    report.store_grade(db, "2026-W21", 10, "Empty but loud")                                   # fails the data gate
+    assert report.best(db, "week")["week"] == "2026-W18"
+    report.store_grade(db, "2026-W20", 8, "Also good")                                         # a tie goes to the newest
+    assert report.best(db, "week") == {"week": "2026-W20", "score": 8, "score_note": "Also good"}
+    assert report.best(db, "month") is None
+    assert report.ungraded(db) == []
+
+
+def test_old_databases_get_the_grade_columns(tmp_path):
+    import sqlite3
+    path = str(tmp_path / "old.db")
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE reports (week TEXT PRIMARY KEY, created_at TEXT NOT NULL, model TEXT, "
+                "markdown TEXT NOT NULL, stats TEXT NOT NULL)")
+    old.execute("INSERT INTO reports VALUES ('2026-W20', 'x', 'sonnet', '## old', '{}')")
+    old.commit(); old.close()
+    d = connect(path)
+    assert {"score", "score_note"} <= {r[1] for r in d.execute("PRAGMA table_info(reports)")}
+    assert report.ungraded(d) == ["2026-W20"]
+    connect(path)                                                 # a second connect does not try to add them again

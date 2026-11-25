@@ -194,14 +194,15 @@ REPORT_KIND = {7: "week", 30: "month", 90: "quarter", 365: "year"}   # the Perio
 ADJ = {"week": "weekly", "month": "monthly", "quarter": "quarterly", "year": "yearly"}
 
 
-def show_report(rdb, pid, named=False):
+def show_report(rdb, pid, heading=None):
     r = report.get(rdb, pid)
     with st.container(border=True):
-        if named:                 # the All view has no selector naming the period
-            st.caption(stats.label(pid))
+        if heading:               # the All view has no selector naming the period
+            st.caption(heading)
         st.markdown(r["markdown"])
+    graded = f" Graded {r['score']}/10 by a second Claude call." if r["score"] is not None else ""
     st.caption(f"Written by Claude ({r['model']}) on {r['created_at'][:10]} from estimated figures; "
-               "only aggregates were sent, no VIN or coordinates.")
+               f"only aggregates were sent, no VIN or coordinates.{graded}")
     with st.expander("Numbers behind it"):
         st.json(json.loads(r["stats"]), expanded=1)
 
@@ -211,13 +212,15 @@ if REPORT_ON:
         kind = REPORT_KIND.get(period_days)
         if period_days == 1:
             st.caption(":material/info: Reports start at 7 days: pick 7 days, 30 days, 90 days or 1 year.")
-        elif kind is None:        # All: the newest report of each kind
+        elif kind is None:        # All: the best report of each kind, as graded by Claude (report.best)
             shown = 0
             for k in stats.KINDS:
-                latest = report.list_reports(rdb, k)
-                if latest:
+                top = report.best(rdb, k)
+                if top:
                     st.subheader(ADJ[k].capitalize())
-                    show_report(rdb, latest[0]["week"], named=True)
+                    head = (f"Best {k} · {stats.label(top['week'])} · {top['score']}/10: {top['score_note']}"
+                            if top["score"] is not None else f"Latest {k} (not graded yet) · {stats.label(top['week'])}")
+                    show_report(rdb, top["week"], head)
                     shown += 1
             if not shown:
                 empty("No report yet. A timer on the server writes the weekly, monthly, quarterly and yearly reports "

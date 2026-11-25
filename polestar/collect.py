@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS reports (
     created_at TEXT NOT NULL,
     model TEXT,
     markdown TEXT NOT NULL,
-    stats TEXT NOT NULL         -- the aggregated JSON the report was written from
+    stats TEXT NOT NULL,        -- the aggregated JSON the report was written from
+    score INTEGER,              -- Claude's grade, 1-10 (NULL until graded)
+    score_note TEXT             -- the one-line reason for the grade
 );
 
 CREATE TABLE IF NOT EXISTS report_failures (
@@ -82,6 +84,11 @@ def connect(path=DB_PATH):
     db = sqlite3.connect(path, timeout=30)
     db.execute("PRAGMA journal_mode=WAL")  # collector writes while the dashboard reads
     db.executescript(SCHEMA)
+    # Columns added after a table was created: CREATE TABLE IF NOT EXISTS leaves existing tables as they are.
+    have = {r[1] for r in db.execute("PRAGMA table_info(reports)")}
+    for col, decl in (("score", "INTEGER"), ("score_note", "TEXT")):   # Claude's grade of the report (report.py)
+        if col not in have:
+            db.execute(f"ALTER TABLE reports ADD COLUMN {col} {decl}")
     return db
 
 
