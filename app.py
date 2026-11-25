@@ -13,7 +13,7 @@ from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
 from polestar.views import activity_grid_chart, bar_chart, charging_notes, chips, empty, fmt_daily, line_chart, location_map, rgba, soc_gauge
 
-st.set_page_config(page_title="Polestar telemetry", page_icon="⚡", layout="wide",
+st.set_page_config(page_title="Polestar telemetry", page_icon=":material/electric_car:", layout="wide",
                    initial_sidebar_state="collapsed")
 st.markdown(theme.CSS, unsafe_allow_html=True)
 if os.environ.get("POLESTAR_DEMO") == "1":   # public demo (demo/Dockerfile): link back to the project
@@ -138,8 +138,6 @@ with st.sidebar:
     st.header("Settings")
     st.number_input("Usable battery (kWh)", 40.0, 120.0, derive.BATTERY_KWH, 1.0, key="battery_kwh",
                     help="Used to turn SoC changes into kWh. Estimate.")   # per session: not a shared module global
-    period_days = st.selectbox("Period", [1, 7, 30, 90, 365, 0], index=2,
-                               format_func=lambda d: "All" if d == 0 else "Last day" if d == 1 else f"Last {d} days")
     if st.button("Reload data"):
         st.cache_data.clear()
     if admin.configured("viewer") and st.button("Sign out"):
@@ -147,6 +145,11 @@ with st.sidebar:
         st.rerun()
 
 st.title("Polestar 2")
+# on the page, not in the collapsed sidebar: it filters six tabs, so the chosen period stays in view
+period_days = st.segmented_control("Period", [1, 7, 30, 90, 365, 0], default=30, required=True, key="period",
+                                   format_func=lambda d: "All" if d == 0 else "1 year" if d == 365 else "1 day" if d == 1 else f"{d} days",
+                                   label_visibility="collapsed",
+                                   help="Filters Trips, Charging, Battery, Insights, Path and Air. Now, Report and Data always show the latest.")
 
 if not os.path.exists(DB_PATH):
     st.error(f"No database at {DB_PATH}. Run `mise run collect` first.")
@@ -217,8 +220,8 @@ if REPORT_ON:
 # ---- trips ---------------------------------------------------------------
 with tab_trips:
     if trip_table.empty:
-        empty("No trips yet. A trip appears once the odometer rises between readings; "
-              "keep the collector running while you drive.", ":material/route:")
+        empty("No trips yet. A trip appears once the car reports a drive; keep the collector running while you drive.",
+              ":material/route:")
     else:
         c = st.columns(3)
         c[0].metric("Trips", len(trip_table), border=True)
@@ -234,8 +237,14 @@ with tab_trips:
         eff = trip_table.dropna(subset=["kwh_per_100km"])
         if len(eff):
             fig = line_chart(eff, "start", "kwh_per_100km", "Consumption per trip (estimated from SoC)", "kWh/100 km",
-                             mode="lines+markers")
+                             mode="markers")                       # independent trips: dots, not a line
+            top = eff["kwh_per_100km"].quantile(0.98) * 1.15       # one odd short trip must not flatten the rest
+            if eff["kwh_per_100km"].max() > top:
+                fig.update_yaxes(range=[0, top])
             st.plotly_chart(fig.update_xaxes(range=xrange) if xrange else fig, width="stretch")   # lines up with the bars
+            if eff["kwh_per_100km"].max() > top:
+                st.caption(f"{int((eff['kwh_per_100km'] > top).sum())} trip(s) above {top:.0f} kWh/100 km are off the "
+                           "chart (short trips where a 1 % SoC step is a large share); they are in the table.")
         with st.expander("Table"):
             views.table(trip_table)
 

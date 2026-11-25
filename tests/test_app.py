@@ -145,9 +145,9 @@ def test_report_tab_warns_about_a_failed_weekly_report(app, demo_db):
 
 def test_period_can_be_the_last_day(app):
     at = app.run()
-    sel = next(s for s in at.sidebar.selectbox if s.label == "Period")
-    assert sel.options[0] == "Last day" and sel.value == 30
-    sel.select(1).run()
+    sel = at.segmented_control(key="period")
+    assert sel.options[0] == "1 day" and sel.value == 30
+    sel.set_value(1).run()
     assert not at.exception
 
 
@@ -155,7 +155,7 @@ def test_login_page_gates_the_dashboard_when_a_password_is_set(app, monkeypatch)
     monkeypatch.setenv("DASHBOARD_PASSWORD", "view")
     at = app.run()
     assert not at.exception
-    assert len(at.tabs) == 0 and not at.metric and not at.sidebar.selectbox     # nothing of the dashboard
+    assert len(at.tabs) == 0 and not at.metric and not at.segmented_control     # nothing of the dashboard
     at.text_input[0].input("wrong")
     at.button[0].click().run()
     assert any("Wrong password" in e.value for e in at.error) and len(at.tabs) == 0

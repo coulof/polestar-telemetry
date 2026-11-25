@@ -12,7 +12,7 @@
 - **Air:** cabin PM2.5 with Good, Moderate and High bands (limits in `config.toml` under `[air]`), the readings, a daily mean and range chart, and pre-cleaning cycles. The car's own air index is shown but not judged. The API documents neither its scale nor the PM2.5 unit (µg/m³ is assumed), and the car reports only now and then.
 - **Data:** snapshot counts and freshness per domain, and the latest raw payload.
 
-The **Period** selector in the sidebar filters Trips, Charging, Battery, Insights, Path and Air. Now, Report and Data always show the latest.
+The **Period** control under the title filters Trips, Charging, Battery, Insights, Path and Air. Now, Report and Data always show the latest.
 
 ## How the data behaves
 

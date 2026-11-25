@@ -21,7 +21,7 @@ def line_chart(df, x, y, title, ytitle, mode="lines", step=False, fill=False, he
     fig = go.Figure(go.Scatter(
         x=df[x], y=df[y], mode=mode,
         line=dict(color=p["series"], width=2, shape="hv" if step else "linear"),
-        marker=dict(size=8, color=p["series"]),
+        marker=dict(size=7 if mode == "markers" else 5, color=p["series"]),   # dots alone carry the data: a bit larger
         fill="tozeroy" if fill else None, fillcolor=rgba(p["series"], 0.10),
         hovertemplate="%{x|%d %b %H:%M}<br>%{y:.1f} " + ytitle + "<extra></extra>",
     ))
@@ -93,7 +93,8 @@ def distance_chart(trips, xrange=None, height=300):
 
 
 def soc_gauge(soc):
-    """Half-circle SoC gauge; tinted zones below 20 % (low) and above 80 % (high), ticks at the edges."""
+    """Half-circle SoC gauge; a red tint below 20 % (low), a grey one above 80 % (not amber: it would sit next to the
+    orange bar), ticks at the edges."""
     p = theme.palette()
     fig = go.Figure(go.Indicator(
         mode="gauge+number", value=soc, number=dict(suffix="%", font=dict(size=44, color=p["ink"])),
@@ -103,7 +104,7 @@ def soc_gauge(soc):
             bar=dict(color=p["series"], thickness=0.3), bgcolor="rgba(0,0,0,0)", borderwidth=0,
             steps=[dict(range=[0, 20], color=rgba(p["low"], 0.28)),
                    dict(range=[20, 80], color=p["grid"]),
-                   dict(range=[80, 100], color=rgba(p["high"], 0.28))],
+                   dict(range=[80, 100], color=p["rest"])],
         ),
     ))
     return theme.style(fig, 200).update_layout(margin=dict(l=30, r=36, t=10, b=0))
@@ -164,7 +165,7 @@ def air_daily_chart(daily, cfg, xrange=None):
     fig.add_trace(go.Scatter(x=x, y=daily["pm25_min"], mode="lines", line=dict(width=0), fill="tonexty",
                              fillcolor=rgba(p["baseline"], 0.12), hoverinfo="skip"))   # grey, so it does not tint the bands
     fig.add_trace(go.Scatter(x=x, y=daily["pm25_avg"], mode="lines+markers", line=dict(color=p["series"], width=2),
-                             marker=dict(size=8, color=p["series"]), customdata=daily[["pm25_min", "pm25_max"]],
+                             marker=dict(size=5, color=p["series"]), customdata=daily[["pm25_min", "pm25_max"]],
                              hovertemplate="%{x|%a %d %b}<br>mean %{y:.1f}, min %{customdata[0]:.0f}, max %{customdata[1]:.0f}<extra></extra>"))
     fig.update_layout(yaxis_title="PM2.5 (assumed µg/m³)", hovermode="x unified")
     fig = day_axis(theme.style(fig, 300, "PM2.5 per day: mean and range"), days, xrange)

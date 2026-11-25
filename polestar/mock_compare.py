@@ -22,7 +22,7 @@ HUES = {
     "km": (("#FCE9A6", "#F6BE00"), ("#4a3b08", "#FFCC1A")),        # Swedish gold
     "trips": (("#FCE9A6", "#F6BE00"), ("#4a3b08", "#FFCC1A")),
     "kwh": (("#c8f0dc", "#0fa36b"), ("#14392b", "#3ddc9a")),
-    "cost": (("#d3e3f8", "#1f5fb0"), ("#1b2d4a", "#6ea8ff")),
+    "cost": (("#ECECE7", "#53565A"), ("#2a2b2c", "#C8C9C7")),     # brand greys (blue is kept in the back pocket)
 }
 
 

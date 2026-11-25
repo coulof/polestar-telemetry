@@ -10,6 +10,8 @@ gatherUsageStats = false
 
 [theme]
 baseRadius = "none"
+headingFontWeights = [400, 500, 500, 500, 500, 500]   # Unica77 is set in a regular weight (brand sheet)
+metricValueFontWeight = 400
 font = "Inter"   # free stand-in for Polestar's Unica77 (licensed): swap the file below + this name
 
 [[theme.fontFaces]]
@@ -18,14 +20,23 @@ url = "app/static/inter-latin-wght-normal.woff2"
 weight = "100 900"
 style = "normal"
 
+# Neutrals from the brand sheet: Black, White (digital only) and the Greys 0-11.
 [theme.light]
 primaryColor = "#ED760E"
-backgroundColor = "#fcfcfb"
-secondaryBackgroundColor = "#ECECE7"   # brand Grey 0
-textColor = "#0b0b0b"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#ECECE7"   # Grey 0
+textColor = "#000000"
+borderColor = "#C8C9C7"                # Grey 3
+yellowColor = "#F6BE00"                # Swedish gold: the "In use" badge matches the Driving chip
+yellowBackgroundColor = "rgba(246,190,0,.24)"
+yellowTextColor = "#7A5C00"
 
 [theme.dark]
 primaryColor = "#FF7500"
-backgroundColor = "#1a1a19"
-secondaryBackgroundColor = "#252524"
-textColor = "#f0efec"
+backgroundColor = "#000000"
+secondaryBackgroundColor = "#1C1C1C"   # derived (no brand grey is this dark): inputs and code on black
+textColor = "#ECECE7"                  # Grey 0
+borderColor = "#53565A"                # Grey 11
+yellowColor = "#F6BE00"
+yellowBackgroundColor = "rgba(246,190,0,.20)"
+yellowTextColor = "#F6BE00"
