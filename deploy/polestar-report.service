@@ -1,9 +1,10 @@
-# systemd *user* unit: writes the weekly report (see weekly-report.sh). Triggered by polestar-report.timer.
+# systemd *user* unit: writes the due Claude reports (week, month, quarter, year; see report.sh).
+# Triggered daily by polestar-report.timer; it only calls Claude for periods that have no report yet.
 [Unit]
-Description=Polestar weekly report (Claude CLI)
+Description=Polestar Claude reports (Claude CLI)
 After=polestar-telemetry.service
 
 [Service]
 Type=oneshot
-ExecStart=%h/src/polestar-telemetry/deploy/weekly-report.sh
-TimeoutStartSec=600
+ExecStart=%h/src/polestar-telemetry/deploy/report.sh
+TimeoutStartSec=1800

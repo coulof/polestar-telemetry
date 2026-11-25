@@ -53,20 +53,56 @@ def test_week_helpers():
     assert stats.last_full_week(dt.datetime(2026, 5, 17, 23)) == "2026-W19"
 
 
+def test_period_ids_for_every_kind():
+    assert stats.kind_of("2026-W05") == "week" and stats.kind_of("2026-11") == "month"
+    assert stats.kind_of("2026-Q4") == "quarter" and stats.kind_of("2026") == "year"
+    assert stats.bounds("2026-12") == ("month", dt.date(2026, 12, 1), dt.date(2027, 1, 1))
+    assert stats.bounds("2026-Q4") == ("quarter", dt.date(2026, 10, 1), dt.date(2027, 1, 1))
+    assert stats.bounds("2026") == ("year", dt.date(2026, 1, 1), dt.date(2027, 1, 1))
+    assert stats.previous("2026-01") == "2025-12" and stats.previous("2026-Q1") == "2025-Q4" and stats.previous("2026") == "2025"
+    now = dt.datetime(2026, 11, 25, 9)
+    assert [stats.last_full(k, now) for k in stats.KINDS] == ["2026-W47", "2026-10", "2026-Q3", "2025"]
+    # on the first day of a quarter the one that just ended is due
+    assert stats.last_full("quarter", dt.datetime(2026, 10, 1, 8)) == "2026-Q3"
+    assert stats.label("2026-11") == "November 2026" and stats.label("2026-Q4") == "Q4 2026"
+    assert stats.label("2026-W47") == "Week 47 · 16–22 Nov 2026"
+
+
+def test_month_and_quarter_stats(db):
+    m = stats.summary(db, "2026-05")
+    assert m["kind"] == "month" and m["period"] == {"start": "2026-05-01", "end": "2026-05-31"}
+    assert m["driving"]["trips"] == 1 and "by_month" not in m
+    q = stats.summary(db, "2026-Q2")
+    assert q["by_month"][0]["month"] == "2026-05" and q["by_month"][0]["km"] == 30.0
+    blob = json.dumps([m, q])
+    assert VIN not in blob and "latitude" not in blob and "3.5678" not in blob and "50.1234" not in blob
+    assert "monthly" in report.build_prompt(m) and "by_month" in report.build_prompt(q)
+
+
+def test_reports_are_listed_by_kind_and_due_skips_stored_ones(db):
+    for pid in ("2026-W20", "2026-W19", "2026-05", "2026-Q2"):
+        report.store(db, pid, "## x", {}, "sonnet")
+    assert [r["week"] for r in report.list_reports(db, "week")] == ["2026-W20", "2026-W19"]
+    assert [r["week"] for r in report.list_reports(db, "month")] == ["2026-05"]
+    report.record_failure(db, "2026-06", "failed while asking Claude")
+    assert report.latest_failure(db, "week") is None and report.latest_failure(db, "month")["week"] == "2026-06"
+    assert report.due(db, dt.datetime(2026, 7, 2, 9)) == ["2026-W26", "2026-06", "2025"]   # Q2 already stored
+
+
 def test_weekly_stats_contents_and_privacy(db):
-    s = stats.weekly(db, "2026-W20")
+    s = stats.summary(db, "2026-W20")
     assert s["period"] == {"start": "2026-05-11", "end": "2026-05-17"}
     assert s["driving"]["trips"] == 1 and s["driving"]["km"] == 30.0
     assert s["charging"]["sessions"] == 1 and s["charging"]["peak_kw"] == 7.0
-    assert s["previous_week_driving"]["trips"] == 0
+    assert s["previous_period_driving"]["trips"] == 0
     blob = json.dumps(s)
     assert VIN not in blob and "latitude" not in blob and "3.5678" not in blob and "50.1234" not in blob
 
 
 def test_weekly_stats_use_a_manual_cost(db):
-    assert stats.weekly(db, "2026-W20")["charging"]["cost_eur"] is None          # no price configured: unknown
+    assert stats.summary(db, "2026-W20")["charging"]["cost_eur"] is None          # no price configured: unknown
     costs.set_cost(db, int(epoch(13, 23)), 6.4)
-    s = stats.weekly(db, "2026-W20")["charging"]
+    s = stats.summary(db, "2026-W20")["charging"]
     assert s["cost_eur"] == 6.4 and s["potential_saving_eur"] == 0
 
 
@@ -113,7 +149,7 @@ def test_generate_with_fake_cli(db, tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_BIN", str(fake))
     md = report.generate(db, "2026-W20")
     assert md.startswith("## Fake week")
-    assert '"week": "2026-W20"' in prompt_log.read_text() and VIN not in prompt_log.read_text()
+    assert '"period_id": "2026-W20"' in prompt_log.read_text() and VIN not in prompt_log.read_text()
     assert report.get(db, "2026-W20")["model"] == "sonnet"
     # second call without force reuses the stored report (the fake would otherwise be re-run)
     prompt_log.unlink()

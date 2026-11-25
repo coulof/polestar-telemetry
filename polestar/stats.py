@@ -1,7 +1,10 @@
-"""Aggregated weekly figures for the report. Contains no VIN and no coordinates."""
+"""Aggregated figures for the Claude reports (week, month, quarter, year). Contains no VIN and no coordinates.
+
+Period ids: week 2026-W47, month 2026-11, quarter 2026-Q4, year 2026."""
 import argparse
 import datetime as dt
 import json
+import re
 import sqlite3
 from zoneinfo import ZoneInfo
 
@@ -23,7 +26,67 @@ def week_start(wid):
 
 def last_full_week(now):
     """ISO week id of the most recent Monday-to-Sunday week that has ended."""
-    return week_id(now.date() - dt.timedelta(days=now.weekday() + 7))
+    return last_full("week", now)
+
+
+KINDS = ("week", "month", "quarter", "year")
+_PATTERNS = {"week": r"\d{4}-W\d{2}", "month": r"\d{4}-\d{2}", "quarter": r"\d{4}-Q[1-4]", "year": r"\d{4}"}
+
+
+def kind_of(pid):
+    for kind, pat in _PATTERNS.items():
+        if re.fullmatch(pat, pid):
+            return kind
+    raise ValueError(f"not a period id: {pid!r}")
+
+
+def bounds(pid):
+    """(kind, first local day, first day after the period) for a period id."""
+    kind = kind_of(pid)
+    if kind == "week":
+        start = week_start(pid)
+        return kind, start, start + dt.timedelta(days=7)
+    year = int(pid[:4])
+    if kind == "year":
+        return kind, dt.date(year, 1, 1), dt.date(year + 1, 1, 1)
+    first = int(pid[5:]) if kind == "month" else 3 * int(pid[-1]) - 2
+    months = 1 if kind == "month" else 3
+    start = dt.date(year, first, 1)
+    nxt = first + months
+    return kind, start, dt.date(year + (nxt - 1) // 12, (nxt - 1) % 12 + 1, 1)
+
+
+def period_id(kind, day):
+    """Id of the period of `kind` that contains `day`."""
+    if kind == "week":
+        return week_id(day)
+    if kind == "month":
+        return f"{day.year}-{day.month:02d}"
+    if kind == "quarter":
+        return f"{day.year}-Q{(day.month - 1) // 3 + 1}"
+    return str(day.year)
+
+
+def previous(pid):
+    kind, start, _ = bounds(pid)
+    return period_id(kind, start - dt.timedelta(days=1))
+
+
+def last_full(kind, now):
+    """Id of the most recent period of `kind` that has ended at `now`."""
+    return previous(period_id(kind, now.date()))
+
+
+def label(pid):
+    """Readable name: 'Week 47 · 16–22 Nov 2026', 'November 2026', 'Q4 2026', '2026'."""
+    kind, start, end = bounds(pid)
+    last = end - dt.timedelta(days=1)
+    if kind == "week":
+        span = f"{start.day}–{last:%-d %b %Y}" if start.month == last.month else f"{start:%-d %b}–{last:%-d %b %Y}"
+        return f"Week {int(pid[-2:])} · {span}"
+    if kind == "month":
+        return f"{start:%B %Y}"
+    return f"{pid[-2:]} {pid[:4]}" if kind == "quarter" else pid
 
 
 def _local(df, col, tz):
@@ -68,13 +131,14 @@ def _charging(sessions):
     }
 
 
-def weekly(db, wid, now=None):
-    """Summary dict for ISO week `wid`, with the previous week's driving/charging for comparison."""
+def summary(db, pid):
+    """Summary dict for period `pid` (week, month, quarter or year), with the previous period's driving and
+    charging for comparison, and a month-by-month breakdown for quarters and years."""
     cfg = config.load()
     tz = ZoneInfo(cfg["report"]["timezone"])
-    start = pd.Timestamp(week_start(wid), tz=tz)
-    end = start + pd.Timedelta(days=7)
-    prev_start = start - pd.Timedelta(days=7)
+    kind, first, after = bounds(pid)
+    start, end = pd.Timestamp(first, tz=tz), pd.Timestamp(after, tz=tz)
+    prev_start = pd.Timestamp(bounds(previous(pid))[1], tz=tz)
 
     battery, odometer = derive.load(db, "battery"), derive.load(db, "odometer")
     location, availability = derive.load(db, "location"), derive.load(db, "availability")
@@ -118,13 +182,14 @@ def weekly(db, wid, now=None):
         amps = pd.to_numeric(batt_w.loc[on, "chargingCurrentAmps"], errors="coerce").dropna()
     ch["amp_limit_in_car_a"] = _num(amp, 0)
     ch["median_charging_current_a"] = _num(amps.median(), 0) if len(amps) else None
-    return {
-        "week": wid,
+    out = {
+        "period_id": pid,
+        "kind": kind,
         "period": {"start": str(start.date()), "end": str((end - pd.Timedelta(days=1)).date())},
         "driving": _driving(t),
-        "previous_week_driving": _driving(pt),
+        "previous_period_driving": _driving(pt),
         "charging": ch,
-        "previous_week_charging": {"sessions": int(len(ps)), "kwh": _num(ps["kwh_from_power"].sum()) if len(ps) else 0.0,
+        "previous_period_charging": {"sessions": int(len(ps)), "kwh": _num(ps["kwh_from_power"].sum()) if len(ps) else 0.0,
                                    "cost_eur": _num(ps["cost"].sum(min_count=1), 2) if len(ps) else None},
         "battery": {
             "soc_min_pct": _num(soc.min(), 0) if len(soc) else None, "soc_max_pct": _num(soc.max(), 0) if len(soc) else None,
@@ -139,15 +204,21 @@ def weekly(db, wid, now=None):
                 "pm25_max": _num(air_w["pm25"].max(), 0) if len(air_w) else None},
         "data_quality": {"battery_events": int(len(batt_w)), "notes": notes},
     }
+    if kind in ("quarter", "year"):
+        m = insights.monthly(s, t, tz=tz)
+        out["by_month"] = [{"month": r["month"], "km": _num(r["km"]), "kwh": _num(r["kwh"]),
+                            "cost_eur": _num(r["cost"], 2), "sessions": int(r["sessions"]) if pd.notna(r["sessions"]) else 0}
+                           for _, r in m.iterrows()]
+    return out
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Print the weekly stats as JSON")
-    ap.add_argument("--week", default="last", help="ISO week like 2026-W46, or 'last'")
+    ap = argparse.ArgumentParser(description="Print a period's stats as JSON")
+    ap.add_argument("--period", default="last", help="period id (2026-W46, 2026-11, 2026-Q4, 2026), or 'last' (week)")
     args = ap.parse_args()
     tz = ZoneInfo(config.load()["report"]["timezone"])
-    wid = last_full_week(dt.datetime.now(tz)) if args.week == "last" else args.week
-    print(json.dumps(weekly(sqlite3.connect(DB_PATH), wid), indent=2))
+    pid = last_full_week(dt.datetime.now(tz)) if args.period == "last" else args.period
+    print(json.dumps(summary(sqlite3.connect(DB_PATH), pid), indent=2))
 
 
 if __name__ == "__main__":

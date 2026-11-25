@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS snapshots (
 CREATE INDEX IF NOT EXISTS snapshots_ts ON snapshots (vin, domain, ts);
 
 CREATE TABLE IF NOT EXISTS reports (
-    week TEXT PRIMARY KEY,      -- ISO week, e.g. 2026-W46
+    week TEXT PRIMARY KEY,      -- period id: week 2026-W46, month 2026-11, quarter 2026-Q4, year 2026
     created_at TEXT NOT NULL,
     model TEXT,
     markdown TEXT NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 
 CREATE TABLE IF NOT EXISTS report_failures (
-    week TEXT PRIMARY KEY,          -- ISO week whose report could not be written
+    week TEXT PRIMARY KEY,          -- period id whose report could not be written
     failed_at TEXT NOT NULL,
     error TEXT NOT NULL             -- which step failed, never data
 );

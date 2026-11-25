@@ -17,7 +17,7 @@ FONT = "Inter, Helvetica Neue, Helvetica, Arial, sans-serif"  # Unica77 is Helve
 
 CSS = """
 <style>
-.block-container { padding-top: 2.2rem; max-width: 1200px; }
+.block-container { padding-top: 4.5rem; max-width: 1200px; }   /* clear the fixed 60 px header, which would hide the title dash */
 /* Type follows the brand sheet: one regular weight, tight tracking, sentence case. Weights are set in config.toml. */
 h1, h2, h3 { letter-spacing: -0.02em; }
 /* the title carries the brand marking system: a short heavy dash with the headline under it */

@@ -1,6 +1,6 @@
 # Polestar telemetry
 
-Collect, store and understand your Polestar 2 usage: trips, charging, battery, cabin air and a weekly written summary, in a small self-hosted dashboard.
+Collect, store and understand your Polestar 2 usage: trips, charging, battery, cabin air and weekly, monthly, quarterly and yearly written summaries, in a small self-hosted dashboard.
 
 **[Live demo](https://polestar.lafabrique.ai/)**: the real dashboard on a synthetic car and made-up places, with the clock frozen.
 
@@ -14,11 +14,11 @@ The [Polestar Data Portal API](api.json) only returns the **current state** of t
 </p>
 <p align="center">
   <img src="docs/img/charging.png" alt="Charging tab: cost, peak power and savings per session" width="32%">
-  <img src="docs/img/report.png" alt="Weekly report written by Claude" width="32%">
+  <img src="docs/img/report.png" alt="Report written by Claude" width="32%">
   <img src="docs/img/now-phone.png" alt="Now tab on a phone" width="16%">
 </p>
 
-<sub>Screenshots use a synthetic car and made-up places (see [`demo/`](demo/)); the weekly report was written by the real `claude` CLI from those synthetic figures.</sub>
+<sub>Screenshots use a synthetic car and made-up places (see [`demo/`](demo/)); the sample report was written by the real `claude` CLI from those synthetic figures.</sub>
 
 How it fits together. The report step runs on the host, not in a container, because the containers have no `claude` CLI.
 
@@ -32,7 +32,7 @@ flowchart LR
         derive["derive / insights /<br/>charging / stats<br/>(computed on read)"]
         app["Streamlit dashboard<br/>app.py, port 8501"]
         timer["systemd timers<br/>report Mon 08:15<br/>backup 03:30"]
-        claude["claude -p on the host<br/>weekly summary"]
+        claude["claude -p on the host<br/>period summaries"]
         backups[("gzip backups<br/>keep 14")]
     end
     you(["You<br/>browser or phone"])
@@ -65,7 +65,7 @@ Needs a Linux or macOS machine with [mise](https://mise.jdx.dev), git and podman
 
 ### Deploy (copy and paste)
 
-Replace the three placeholders, then run the block. It builds the two containers, waits until the dashboard is healthy and installs the weekly Claude report timer.
+Replace the three placeholders, then run the block. It builds the two containers, waits until the dashboard is healthy and installs the Claude reports timer.
 
 ```sh
 git clone https://github.com/coulof/polestar-telemetry.git && cd polestar-telemetry
@@ -81,7 +81,7 @@ mise run deploy
 
 Open <http://127.0.0.1:8501>. The first data appears after the first poll (up to 5 minutes).
 
-- **No Claude subscription?** Run `mise run deploy:stack` instead: it skips the weekly report. Also set `[report] enabled = false` in `config.toml` to hide the Report tab.
+- **No Claude subscription?** Run `mise run deploy:stack` instead: it skips the Claude reports. Also set `[report] enabled = false` in `config.toml` to hide the Report tab.
 - **Prices, locations, time zone:** edit the `config.toml` that deploy created from [`config.example.toml`](config.example.toml); changes apply without a restart.
 - **Reach it from your phone or add a login:** see [Deployment](docs/deployment.md#access-and-the-login-page).
 
@@ -100,7 +100,7 @@ mise run app                        # dashboard on http://localhost:8501
 | [Configuration](docs/configuration.md) | Credentials, environment variables, `config.toml` (prices, tariffs, timezone) |
 | [The dashboard](docs/dashboard.md) | What each tab shows and how the data behaves |
 | [Database](docs/database.md) | The SQLite schema as a diagram, who writes each table, and the keys that outlive the data |
-| [Deployment](docs/deployment.md) | Containers, boot persistence, login page, backups, updates, weekly report, troubleshooting |
+| [Deployment](docs/deployment.md) | Containers, boot persistence, login page, backups, updates, Claude reports, troubleshooting |
 | [Development](docs/development.md) | Tests, README images, code layout |
 | [`SECURITY.md`](SECURITY.md) | What to know before exposing the dashboard, and how to report a vulnerability |
 | [`AGENTS.md`](AGENTS.md) | Conventions and data gotchas, for coding agents and people |

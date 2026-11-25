@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 
-from polestar import admin, charging, config, costs, derive, insights, path, place_labels, report, theme, views
+from polestar import admin, charging, config, costs, derive, insights, path, place_labels, report, stats, theme, views
 from polestar.client import DOMAINS
 from polestar.collect import DB_PATH, connect
 from polestar.derive import CHARGING_STATES
@@ -189,33 +189,55 @@ tab_now, tab_trips, tab_charge, tab_batt, tab_ins, tab_path, tab_air, tab_data =
 with tab_now:
     now_tab()
 
-# ---- weekly report -------------------------------------------------------
-if REPORT_ON:
-    with tabs["Report"]:
-        rdb = connect(DB_PATH)
-        weeks = report.list_weeks(rdb)
-        failure = report.latest_failure(rdb)
-        if failure:
-            st.warning(f"The weekly report for {failure['week']} could not be written: {failure['error']} "
-                       f"({failure['failed_at'][:16].replace('T', ' ')} UTC)." + (" The report below is the previous one." if weeks else ""),
-                       icon=":material/error:")
-        if not weeks:
-            empty("No weekly report yet. A timer on the server writes one every Monday morning; "
-                  "run `deploy/weekly-report.sh` there (or `mise run report` locally) to create the first.",
-                  ":material/auto_awesome:")
-        else:
-            wk = st.selectbox("Week", [w["week"] for w in weeks], label_visibility="collapsed")
-            r = report.get(rdb, wk)
-            week_stats = json.loads(r["stats"])
-            with st.container(border=True):
-                st.caption(f"{week_stats['period']['start']} to {week_stats['period']['end']}")
-                st.markdown(r["markdown"])
-            st.caption(f"Written by Claude ({r['model']}) on {r['created_at'][:10]} from estimated figures; "
-                       "only aggregates were sent, no VIN or coordinates.")
-            with st.expander("Numbers behind it"):
-                st.json(week_stats, expanded=1)
+# ---- Claude reports ------------------------------------------------------
+REPORT_KIND = {7: "week", 30: "month", 90: "quarter", 365: "year"}   # the Period control picks the kind of report
+ADJ = {"week": "weekly", "month": "monthly", "quarter": "quarterly", "year": "yearly"}
 
-    rdb.close()
+
+def show_report(rdb, pid, named=False):
+    r = report.get(rdb, pid)
+    with st.container(border=True):
+        if named:                 # the All view has no selector naming the period
+            st.caption(stats.label(pid))
+        st.markdown(r["markdown"])
+    st.caption(f"Written by Claude ({r['model']}) on {r['created_at'][:10]} from estimated figures; "
+               "only aggregates were sent, no VIN or coordinates.")
+    with st.expander("Numbers behind it"):
+        st.json(json.loads(r["stats"]), expanded=1)
+
+
+if REPORT_ON:
+    with tabs["Report"], closing(connect(DB_PATH)) as rdb:
+        kind = REPORT_KIND.get(period_days)
+        if period_days == 1:
+            st.caption(":material/info: Reports start at 7 days: pick 7 days, 30 days, 90 days or 1 year.")
+        elif kind is None:        # All: the newest report of each kind
+            shown = 0
+            for k in stats.KINDS:
+                latest = report.list_reports(rdb, k)
+                if latest:
+                    st.subheader(ADJ[k].capitalize())
+                    show_report(rdb, latest[0]["week"], named=True)
+                    shown += 1
+            if not shown:
+                empty("No report yet. A timer on the server writes the weekly, monthly, quarterly and yearly reports "
+                      "once each period ends; run `deploy/report.sh` there to create the first.", ":material/auto_awesome:")
+        else:
+            reports = report.list_reports(rdb, kind)
+            failure = report.latest_failure(rdb, kind)
+            if failure:
+                st.warning(f"The {ADJ[kind]} report for {stats.label(failure['week'])} could not be written: {failure['error']} "
+                           f"({failure['failed_at'][:16].replace('T', ' ')} UTC)." + (" The report below is the previous one." if reports else ""),
+                           icon=":material/error:")
+            if not reports:
+                ends = stats.bounds(stats.period_id(kind, now_local.date()))[2]
+                empty(f"No {ADJ[kind]} report yet. The first is written on {ends:%-d %b %Y}, once the current {kind} ends; "
+                      "run `deploy/report.sh` on the server to create one for an earlier period.", ":material/auto_awesome:")
+            else:
+                pid = st.selectbox(ADJ[kind].capitalize() + " report", [r["week"] for r in reports], format_func=stats.label,
+                                   label_visibility="collapsed")
+                show_report(rdb, pid)
+                st.caption(f"Reports cover calendar {kind}s, not the rolling {period_days} days of the other tabs.")
 
 # ---- trips ---------------------------------------------------------------
 with tab_trips:

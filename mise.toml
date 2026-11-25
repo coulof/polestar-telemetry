@@ -27,16 +27,16 @@ description = "Run the dashboard"
 run = "uv run streamlit run app.py"
 
 [tasks.report]
-description = "Development only: write a weekly report into the LOCAL database (data/telemetry.db), not the deployed stack. On a deployed stack run deploy/weekly-report.sh"
+description = "Development only: write a report (default: last week; --period ID) into the LOCAL database (data/telemetry.db), not the deployed stack. On a deployed stack run deploy/report.sh"
 run = "uv run python -m polestar.report --generate"
 
 [tasks.test]
 description = "Run tests"
 run = "uv run pytest"
 
-# Local deploy for a new setup: containers (collector + dashboard) and the weekly Claude report.
+# Local deploy for a new setup: containers (collector + dashboard) and the Claude reports timer.
 [tasks.deploy]
-description = "Deploy locally: check prerequisites, start the stack, install the weekly Claude report"
+description = "Deploy locally: check prerequisites, start the stack, install the Claude reports timer"
 depends = ["deploy:claude"]
 
 [tasks."deploy:check"]
@@ -65,14 +65,14 @@ echo "dashboard did not become healthy" >&2; exit 1
 """
 
 [tasks."deploy:claude"]
-description = "Install the weekly report timer (needs podman and a logged-in claude CLI) and check the login"
+description = "Install the daily Claude reports timer (needs podman and a logged-in claude CLI) and check the login"
 depends = ["deploy:stack"]
 run = """
 set -eu
 python3 -c "import sys,tomllib; sys.exit(0 if tomllib.load(open('config.toml','rb')).get('report',{}).get('enabled',True) else 1)" \
-  || { echo "Claude integration disabled in config.toml ([report] enabled = false): skipping the weekly report timer"; exit 0; }
+  || { echo "Claude integration disabled in config.toml ([report] enabled = false): skipping the report timer"; exit 0; }
 command -v claude >/dev/null || { echo "claude CLI not found: install it and log in, then re-run" >&2; exit 1; }
-command -v podman >/dev/null || { echo "the report timer needs podman (weekly-report.sh uses podman exec)" >&2; exit 1; }
+command -v podman >/dev/null || { echo "the report timer needs podman (report.sh uses podman exec)" >&2; exit 1; }
 printf ok | claude -p --tools "" --no-session-persistence --output-format text >/dev/null \
   || { echo "claude is not logged in: run claude and log in" >&2; exit 1; }
 collector="$(podman ps --filter name=collector --format '{{ "{{" }}.Names{{ "}}" }}' | head -1)"
@@ -82,7 +82,7 @@ sed -e "s|%h/src/polestar-telemetry|$PWD|" \
     deploy/polestar-report.service > "$unit/polestar-report.service"
 cp deploy/polestar-report.timer "$unit/"
 systemctl --user daemon-reload && systemctl --user enable --now polestar-report.timer
-echo "weekly report timer enabled; run it now with: deploy/weekly-report.sh"
+echo "report timer enabled (daily catch-up); run it now with: deploy/report.sh"
 """
 
 # Public demo (demo/compose.yml): real dashboard on synthetic data with a frozen clock, behind a Cloudflare Tunnel run on the host

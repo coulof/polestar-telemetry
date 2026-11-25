@@ -14,7 +14,7 @@ It runs three tasks in order, and you can run any of them on its own:
 |---|---|
 | `deploy:check` | Checks `.env`, creates `config.toml` from `config.example.toml` if missing, checks for `podman-compose` or `docker compose` |
 | `deploy:stack` | Builds and starts the collector and dashboard, waits for the health check (`http://127.0.0.1:8501`, or `BIND_ADDR`) |
-| `deploy:claude` | Checks the `claude` CLI is installed and logged in, installs the weekly report timer (Mondays 08:15) for this folder. Needs podman. Skipped, with no `claude` login needed, when `config.toml` has `[report] enabled = false` |
+| `deploy:claude` | Checks the `claude` CLI is installed and logged in, installs the Claude reports timer (daily 08:15, catches up any due week, month, quarter or year) for this folder. Needs podman. Skipped, with no `claude` login needed, when `config.toml` has `[report] enabled = false` |
 
 With Docker you get the stack but not the report timer, and `deploy/update.sh` and the systemd units assume podman. The sections below cover the same steps by hand.
 
@@ -100,19 +100,19 @@ deploy/update.sh      # runs the tests, git pull --ff-only, rebuilds the images,
 
 `config.toml` and `.env` are not in git. Keep them in the project folder on the host and edit them there.
 
-## Weekly report (Claude Code CLI)
+## Claude reports (Claude Code CLI)
 
-The report is written by the Claude Code CLI (`claude -p`, your subscription login, no API key). The container has no CLI, so a host-side timer runs [`deploy/weekly-report.sh`](../deploy/weekly-report.sh): it asks the collector container for the prompt, pipes it to `claude` (text only: no tools, skills or MCP), and stores the answer through the container. Only aggregated figures are sent, never the VIN or coordinates. Install on the host, which needs the `claude` CLI logged in:
+Weekly, monthly, quarterly and yearly reports are written by the Claude Code CLI (`claude -p`, your subscription login, no API key), one per calendar period once it ends. The container has no CLI, so a daily host-side timer runs [`deploy/report.sh`](../deploy/report.sh): for every last full week, month, quarter and year that has no report yet, it asks the collector container for the prompt, pipes it to `claude` (text only: no tools, skills or MCP), and stores the answer through the container. Only aggregated figures are sent, never the VIN or coordinates. Install on the host, which needs the `claude` CLI logged in:
 
 ```sh
 cp deploy/polestar-report.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload && systemctl --user enable --now polestar-report.timer   # Mondays 08:15
-deploy/weekly-report.sh [ISO-WEEK]    # run it now; FORCE=1 replaces an existing report
+deploy/report.sh [PERIOD-ID]    # run it now (2026-W47, 2026-11, 2026-Q4 or 2026); FORCE=1 replaces an existing report
 ```
 
-**On a deployed stack, always run `deploy/weekly-report.sh`.** `mise run report` is for development: it writes into the local file `data/telemetry.db` (`DB_PATH`), which is not the database the containers use. The report is then stored, and the command prints "stored", but the dashboard never shows it, and it is written from the local database's contents, which are empty unless you ran the collector locally. The script is the only path that reads the figures from, and stores the report in, the database the dashboard reads.
+**On a deployed stack, always run `deploy/report.sh`.** `mise run report` is for development: it writes into the local file `data/telemetry.db` (`DB_PATH`), which is not the database the containers use. The report is then stored, and the command prints "stored", but the dashboard never shows it, and it is written from the local database's contents, which are empty unless you ran the collector locally. The script is the only path that reads the figures from, and stores the report in, the database the dashboard reads.
 
-If a run fails (for example the CLI login expired) the Report tab keeps showing the previous report and adds a warning with the failed step, until a report for that week is stored. The same warning goes to the journal (`journalctl --user -u polestar-report`) and, if you set `NOTIFY_URL`, to your phone: the scripts POST the message to that URL in the [ntfy](https://ntfy.sh) style (title in a header, message as the body). The message holds only the step and exit code, never data. The nightly backup uses the same channel. Set it on the timers' services, for example with a private topic name:
+If a run fails (for example the CLI login expired) the Report tab keeps showing the previous report and adds a warning with the failed step, until a report for that period is stored. The same warning goes to the journal (`journalctl --user -u polestar-report`) and, if you set `NOTIFY_URL`, to your phone: the scripts POST the message to that URL in the [ntfy](https://ntfy.sh) style (title in a header, message as the body). The message holds only the step and exit code, never data. The nightly backup uses the same channel. Set it on the timers' services, for example with a private topic name:
 
 ```sh
 systemctl --user edit polestar-report    # add:  [Service]  Environment=NOTIFY_URL=https://ntfy.sh/<your-secret-topic>
@@ -125,8 +125,8 @@ With ntfy.sh the topic name is the only secret, so pick a long random one; your 
 
 - Logs: `podman logs -f polestar-telemetry_collector_1` (one line per poll with the number of new rows per domain) and `..._app_1`.
 - A domain returning 404 (saved charge locations on this car) is skipped silently, by design.
-- A report was "stored" but the Report tab does not show it: it went into the wrong database, usually from `mise run report`. Run `deploy/weekly-report.sh <week>` with `FORCE=1`.
+- A report was "stored" but the Report tab does not show it: it went into the wrong database, usually from `mise run report`. Run `deploy/report.sh <period-id>` with `FORCE=1`.
 - Times one hour off mean `timezone` is missing from `config.toml`.
 - A new install shows an empty dashboard until the first poll has stored data (up to the poll interval, 5 minutes by default).
 - The login page says "Too many wrong attempts": five wrong passwords lock every session for a minute; wait and retry.
-- The Report tab shows a warning that the weekly report failed: read `journalctl --user -u polestar-report` and re-run `deploy/weekly-report.sh`; the usual cause is an expired `claude` login.
+- The Report tab shows a warning that a report failed: read `journalctl --user -u polestar-report` and re-run `deploy/report.sh`; the usual cause is an expired `claude` login.

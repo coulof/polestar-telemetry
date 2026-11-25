@@ -130,16 +130,40 @@ def test_location_can_be_set_and_reset_once_unlocked(app, demo_db):
         assert costs.load_locations(db) == {}
 
 
-def test_report_tab_warns_about_a_failed_weekly_report(app, demo_db):
+def test_report_tab_warns_about_a_failed_report_of_the_period_kind(app, demo_db):
     with collect.connect(demo_db) as db:
-        report.record_failure(db, "2026-W99", "failed while asking Claude (exit 1)")
+        report.record_failure(db, "2026-02", "failed while asking Claude (exit 1)")
     try:
-        at = app.run()
+        at = app.run()                                         # default period 30 days: monthly reports
         assert not at.exception
-        assert any("2026-W99" in w.value and "failed while asking Claude" in w.value for w in at.warning)
+        assert any("monthly report for February 2026" in w.value and "failed while asking Claude" in w.value for w in at.warning)
+        at.segmented_control(key="period").set_value(7).run()  # a monthly failure is not shown with the weekly reports
+        assert not any("February 2026" in w.value for w in at.warning)
     finally:
         with collect.connect(demo_db) as db:
             db.execute("DELETE FROM report_failures")
+            db.commit()
+
+
+def test_report_tab_follows_the_period(app, demo_db):
+    with collect.connect(demo_db) as db:
+        report.store(db, "2026-W40", "## A test week", {}, "sonnet")
+        report.store(db, "2026-Q3", "## A test quarter", {}, "sonnet")
+    try:
+        at = app.run()
+        assert any("No monthly report yet" in i.value for i in at.info)            # 30 days: none stored
+        at.segmented_control(key="period").set_value(7).run()
+        assert any("A test week" in m.value for m in at.markdown)
+        at.segmented_control(key="period").set_value(90).run()
+        assert any("A test quarter" in m.value for m in at.markdown) and not any("A test week" in m.value for m in at.markdown)
+        at.segmented_control(key="period").set_value(0).run()                     # All: the latest of each kind
+        assert any("A test week" in m.value for m in at.markdown) and any("A test quarter" in m.value for m in at.markdown)
+        at.segmented_control(key="period").set_value(1).run()
+        assert any("Reports start at 7 days" in c.value for c in at.caption)
+        assert not at.exception
+    finally:
+        with collect.connect(demo_db) as db:
+            db.execute("DELETE FROM reports")
             db.commit()
 
 

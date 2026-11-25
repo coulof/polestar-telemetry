@@ -154,18 +154,19 @@ def build(now):
 
 
 def sample_report(w):
-    """A hand-written stand-in for the weekly Claude report, filled with the week's own (synthetic) figures."""
-    d, pd_, c, pc, b = w["driving"], w["previous_week_driving"], w["charging"], w["previous_week_charging"], w["battery"]
+    """A hand-written stand-in for a Claude report, filled with the period's own (synthetic) figures."""
+    d, pd_, c, pc, b = w["driving"], w["previous_period_driving"], w["charging"], w["previous_period_charging"], w["battery"]
+    unit = w["kind"]
     delta = d["km"] - pd_["km"]
     loc = max(c["by_location"], key=lambda x: x["kwh"]) if c["by_location"] else None
     bullets = [
-        f"**{d['trips']} trips, {d['km']:.0f} km**, {'up' if delta >= 0 else 'down'} {abs(delta):.0f} km on last week's {pd_['km']:.0f}. "
-        f"The longest single drive was {d['longest_trip_km']:.0f} km, so the week was mostly short hops.",
+        f"**{d['trips']} trips, {d['km']:.0f} km**, {'up' if delta >= 0 else 'down'} {abs(delta):.0f} km on the previous {unit}'s {pd_['km']:.0f}. "
+        f"The longest single drive was {d['longest_trip_km']:.0f} km, so the {unit} was mostly short hops.",
         f"**Consumption of about {d['kwh_per_100km_estimated']:.1f} kWh/100 km** (estimated), at an average {d['avg_speed_kmh']:.0f} km/h: "
         "city driving, where the car is at its most frugal.",
         f"**{c['sessions']} charging sessions for {c['kwh']:.0f} kWh and €{c['cost_eur']:.2f}**"
         + (f", most of it at {loc['name']} ({loc['kwh']:.0f} kWh)." if loc else ".")
-        + (f" Last week: {pc['sessions']} sessions, €{pc['cost_eur']:.2f}." if pc["cost_eur"] is not None else ""),
+        + (f" Previous {unit}: {pc['sessions']} sessions, €{pc['cost_eur']:.2f}." if pc["cost_eur"] is not None else ""),
     ]
     if c.get("potential_saving_eur"):
         bullets.append(f"**Shifting peak-rate charging to the cheapest window would have saved about €{c['potential_saving_eur']:.2f}.** "
@@ -177,12 +178,13 @@ def sample_report(w):
 
 
 def add_reports(db, now):
-    """Store a sample report for each of the last two full weeks (the Report tab's week picker)."""
-    for back in (0, 7):
-        wid = stats.last_full_week(now - dt.timedelta(days=back))
-        w = stats.weekly(db, wid)
+    """Store a sample report for each of the last two full weeks (the Report tab's week picker) and the last full
+    month (its 30 days view), when the synthetic data covers them."""
+    pids = [stats.last_full_week(now - dt.timedelta(days=back)) for back in (0, 7)] + [stats.last_full("month", now)]
+    for pid in pids:
+        w = stats.summary(db, pid)
         if w["driving"]["trips"] and w["charging"]["sessions"] and w["charging"]["cost_eur"] is not None:
-            report.store(db, wid, sample_report(w), w, "hand-written sample")
+            report.store(db, pid, sample_report(w), w, "hand-written sample")
 
 
 def main():

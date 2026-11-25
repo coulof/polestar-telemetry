@@ -12,9 +12,9 @@ FAKE_PODMAN = r"""#!/usr/bin/env bash
 echo "podman $*" >> "$LOG"
 [ "${PODMAN_FAIL:-}" = 1 ] && exit 1
 case "$*" in
-  *--week-id*) echo 2026-W20 ;;
+  *--due*) printf '2026-W20\n2026-10\n' ;;
   *--exists*) exit 1 ;;
-  *--prompt*) echo "PROMPT" ;;
+  *--prompt*) echo "PROMPT ${@: -1}" ;;
   *polestar.freshness*) echo "${FRESH_AGE:-60}" ;;
   *"python -c"*"alerts"*) echo "${STALE_H:-6}" ;;
   *"python -c"*"enabled"*) [ "${REPORT_OFF:-}" = 1 ] && echo False || echo True ;;
@@ -23,8 +23,9 @@ case "$*" in
 esac
 """
 FAKE_CLAUDE = r"""#!/usr/bin/env bash
-cat > /dev/null
+in="$(cat)"
 [ "${CLAUDE_FAIL:-}" = 1 ] && exit 1
+[ -n "${CLAUDE_FAIL_ID:-}" ] && [[ "$in" == *"$CLAUDE_FAIL_ID"* ]] && exit 1
 [ "${CLAUDE_EMPTY:-}" = 1 ] && exit 0
 echo "## A week"
 """
@@ -50,45 +51,56 @@ def env(tmp_path):
 
 
 def test_report_success_stores_and_does_not_notify(env):
-    r, log = env("weekly-report.sh", NOTIFY_URL="https://ntfy.test/topic")
+    r, log = env("report.sh", NOTIFY_URL="https://ntfy.test/topic")
     assert r.returncode == 0
-    assert "--store 2026-W20" in log and "curl" not in log and "--failed" not in log
+    assert "--store 2026-W20" in log and "--store 2026-10" in log and "curl" not in log and "--failed" not in log
+
+
+def test_one_period_failing_does_not_stop_the_others(env):
+    r, log = env("report.sh", NOTIFY_URL="https://ntfy.test/topic", CLAUDE_FAIL_ID="2026-W20")
+    assert r.returncode == 1
+    assert "--failed 2026-W20" in log and "--store 2026-10" in log and "--store 2026-W20" not in log
+
+
+def test_a_given_period_id_runs_only_that_one(env):
+    r, log = env("report.sh", "2026-Q3")
+    assert r.returncode == 0 and "--store 2026-Q3" in log and "--due" not in log
 
 
 def test_disabled_integration_skips_claude_and_stays_quiet(env):
-    r, log = env("weekly-report.sh", NOTIFY_URL="https://ntfy.test/topic", REPORT_OFF="1", CLAUDE_FAIL="1")
+    r, log = env("report.sh", NOTIFY_URL="https://ntfy.test/topic", REPORT_OFF="1", CLAUDE_FAIL="1")
     assert r.returncode == 0 and "disabled" in r.stdout
     assert "--store" not in log and "--failed" not in log and "curl" not in log
 
 
 def test_claude_failure_is_recorded_and_notified(env):
-    r, log = env("weekly-report.sh", NOTIFY_URL="https://ntfy.test/topic", CLAUDE_FAIL="1")
+    r, log = env("report.sh", NOTIFY_URL="https://ntfy.test/topic", CLAUDE_FAIL="1")
     assert r.returncode == 1
     assert "--failed 2026-W20" in log and "failed while asking Claude" in log
-    assert "curl" in log and "https://ntfy.test/topic" in log and "Title: Polestar weekly report failed" in log
+    assert "curl" in log and "https://ntfy.test/topic" in log and "Title: Polestar report failed" in log
     assert "--store" not in log
     assert "failed while asking Claude" in r.stderr
 
 
 def test_empty_answer_counts_as_a_failure(env):
-    r, log = env("weekly-report.sh", CLAUDE_EMPTY="1")
+    r, log = env("report.sh", CLAUDE_EMPTY="1")
     assert r.returncode == 1 and "(it was empty)" in log and "--store" not in log
 
 
 def test_without_a_notify_url_the_failure_is_only_recorded(env):
-    r, log = env("weekly-report.sh", CLAUDE_FAIL="1")
+    r, log = env("report.sh", CLAUDE_FAIL="1")
     assert r.returncode == 1 and "--failed 2026-W20" in log and "curl" not in log
 
 
 def test_container_down_notifies_even_though_it_cannot_record(env):
-    r, log = env("weekly-report.sh", NOTIFY_URL="https://ntfy.test/topic", PODMAN_FAIL="1")
+    r, log = env("report.sh", NOTIFY_URL="https://ntfy.test/topic", PODMAN_FAIL="1")
     assert r.returncode != 0
-    assert "finding the week" in log and "curl" in log and "--failed" not in log
+    assert "reading the config" in log and "curl" in log and "--failed" not in log
 
 
 def test_a_notification_never_carries_database_content(env):
-    r, log = env("weekly-report.sh", NOTIFY_URL="https://ntfy.test/topic", CLAUDE_FAIL="1")
-    assert "PROMPT" not in log.split("curl", 1)[1]
+    r, log = env("report.sh", NOTIFY_URL="https://ntfy.test/topic", CLAUDE_FAIL="1")
+    assert all("PROMPT" not in part for part in log.split("curl")[1:])
 
 
 def test_backup_failure_notifies(env, tmp_path):

@@ -30,15 +30,15 @@ Conventions, data gotchas, brand colours and the server workflow are in [`AGENTS
 | `polestar/derive.py` | Trips, charge sessions, parked drain, pricing, air quality |
 | `polestar/insights.py` | Real-world range, capacity trend, monthly costs, activity grid |
 | `polestar/charging.py` | The car's charging settings, plug-state and amp-limit checks |
-| `polestar/stats.py` | Weekly aggregates without VIN or coordinates |
-| `polestar/report.py` | Weekly report: prompt, storage, `claude -p` call |
+| `polestar/stats.py` | Period ids and aggregates (week, month, quarter, year) without VIN or coordinates |
+| `polestar/report.py` | Claude reports: prompt, storage, due periods, `claude -p` call |
 | `polestar/admin.py` | Dashboard and admin passwords: sessions and lockout |
 | `polestar/freshness.py` | Age of the collector's last successful poll, for the stale-data alert |
 | `polestar/costs.py` | Manual charge costs stored per session |
 | `polestar/theme.py` | Chart styling, CSS and the status chip |
 | `polestar/path.py` | Path tab: parked places, trip stops, trail map, stays timeline |
 | `polestar/mock_compare.py` | Design mock-up on synthetic data |
-| `deploy/` | systemd units and timers (stack, report, backup), `update.sh`, `weekly-report.sh`, `backup.sh`, `freshness.sh`, `notify.sh` |
+| `deploy/` | systemd units and timers (stack, report, backup), `update.sh`, `report.sh`, `backup.sh`, `freshness.sh`, `notify.sh` |
 | `static/` | Self-hosted Inter font and its licence (`OFL.txt`, must stay next to the font) |
 | `demo/` | Synthetic database and screenshot capture for the README images |
 | `docs/img/` | README screenshots and tour |
